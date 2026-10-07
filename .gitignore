@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+coverage/
+
+# Secrets and local-only files
+judge0/judge0.conf
+*.pem
+
+# Throwaway scripts and build output
+server/scratch/
+client/dev-dist/

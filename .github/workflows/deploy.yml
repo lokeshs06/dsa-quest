@@ -1,0 +1,53 @@
+name: Deploy
+
+# Runs only after the "Tests" workflow has passed on main, and only once you switch it on:
+# in GitHub go to Settings > Secrets and variables > Actions, add the secrets below, and add a
+# repository *variable* named DEPLOY_ENABLED with the value true.
+#
+#   RENDER_DEPLOY_HOOK   the Deploy Hook URL of your Render web service (the API)
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID   from your Vercel account and project (the client)
+#
+# Skip this file entirely if you deploy as a single service (Express serving client/dist).
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: Deploy API to Render
+    if: ${{ github.event.workflow_run.conclusion == 'success' && vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      # The API goes first: it only ever gains endpoints, so the old client keeps working while the new one rolls out
+      - name: Trigger the Render deploy hook
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: curl --fail --silent --show-error --request POST "$HOOK"
+
+  client:
+    name: Deploy client to Vercel
+    needs: api
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      # Deploy the exact commit that passed the tests, not whatever main has moved on to
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --global vercel@latest
+      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

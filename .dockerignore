@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+.git
+.github
+docs
+judge0
+server/tests
+server/scratch
+server/scripts
+client/dev-dist

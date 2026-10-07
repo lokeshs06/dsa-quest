@@ -1,0 +1,36 @@
+# Render Blueprint: one web service that runs the API and serves the client.
+# Render dashboard -> New -> Blueprint -> pick this repo. Fill in the values marked "sync: false" when asked.
+services:
+  - type: web
+    name: dsa-quest
+    runtime: node
+    plan: free # free sleeps after 15 minutes idle (first request then takes ~1 minute); "starter" stays awake
+    region: singapore
+    buildCommand: npm run install:all && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MONGO_URI # MongoDB Atlas connection string
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CLIENT_URL # your public URL, e.g. https://dsa-quest.onrender.com
+        sync: false
+      # Optional features: leave empty to switch them off
+      - key: JUDGE0_API_KEY # Run/Submit in the editor and battles (RapidAPI Judge0 CE)
+        sync: false
+      - key: ANTHROPIC_API_KEY # AI hints, quiz questions, automatic test cases
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
