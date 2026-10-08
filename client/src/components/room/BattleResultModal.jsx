@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { DoorOpen, Handshake, LoaderCircle, RotateCcw, Trophy, Frown, Zap } from 'lucide-react';
 import { Modal } from '../ui.jsx';
 import { endReasonText, formatMs } from '../../lib/battleState.js';
@@ -8,21 +9,40 @@ function headline(result, me) {
   const solo = result.mode === 'solo';
   if (solo) {
     return result.winnerId
-      ? { icon: Zap, tone: 'text-solved', title: '⚡ Solved!', text: 'You passed every test case.' }
-      : { icon: Frown, tone: 'text-muted', title: '⏱️ Time’s up', text: result.reason === 'player_left' ? 'You left the solo battle.' : 'The clock ran out this time.' };
+      ? { icon: Zap, tone: 'text-solved', title: 'Solved!', text: 'You passed every test case.' }
+      : { icon: Frown, tone: 'text-muted', title: 'Time’s up', text: result.reason === 'player_left' ? 'You left the solo battle.' : 'The clock ran out this time.' };
   }
   if (result.draw) {
-    return { icon: Handshake, tone: 'text-progress', title: '🤝 Draw', text: result.reason === 'abandoned' ? 'Both players left the battle.' : 'Both players finished with the same result.' };
+    return { icon: Handshake, tone: 'text-progress', title: 'Draw', text: result.reason === 'abandoned' ? 'Both players left the battle.' : 'Both players finished with the same result.' };
   }
-  if (won && result.reason === 'opponent_left') return { icon: Trophy, tone: 'text-solved', title: '🏆 You won!', text: 'Your opponent left the battle.', note: true };
-  if (won && result.reason === 'opponent_disconnected_timeout') return { icon: Trophy, tone: 'text-solved', title: '🏆 You won!', text: 'Your opponent disconnected and didn’t come back in time.', note: true };
-  if (won) return { icon: Trophy, tone: 'text-solved', title: '🏆 You won!', text: result.reason === 'time_expired' ? 'Time ran out and you had the better submission.' : 'Congratulations! You defeated your opponent.' };
+  if (won && result.reason === 'opponent_left') return { icon: Trophy, tone: 'text-solved', title: 'You won!', text: 'Your opponent left the battle.', note: true };
+  if (won && result.reason === 'opponent_disconnected_timeout') return { icon: Trophy, tone: 'text-solved', title: 'You won!', text: 'Your opponent disconnected and didn’t come back in time.', note: true };
+  if (won) return { icon: Trophy, tone: 'text-solved', title: 'You won!', text: result.reason === 'time_expired' ? 'Time ran out and you had the better submission.' : 'Congratulations! You defeated your opponent.' };
   if (result.reason === 'opponent_left') return { icon: DoorOpen, tone: 'text-revision', title: 'You left the battle', text: `${result.winnerName ?? 'Your opponent'} wins this one.` };
   if (result.reason === 'opponent_disconnected_timeout') return { icon: DoorOpen, tone: 'text-revision', title: 'You were disconnected', text: `You didn’t reconnect in time, so ${result.winnerName ?? 'your opponent'} wins.` };
-  return { icon: Frown, tone: 'text-revision', title: '😔 You lost', text: 'Better luck next time!' };
+  return { icon: Frown, tone: 'text-revision', title: 'You lost', text: 'Better luck next time!' };
+}
+
+// A win (or a solved solo run) is the big moment: two bursts of confetti. Skipped for people who prefer less motion.
+function useCelebration(active) {
+  useEffect(() => {
+    if (!active) return undefined;
+    let cancelled = false;
+    import('canvas-confetti').then(({ default: confetti }) => {
+      if (cancelled) return;
+      const shot = (x) => confetti({ particleCount: 90, spread: 70, startVelocity: 45, origin: { x, y: 0.65 }, zIndex: 9999, disableForReducedMotion: true });
+      shot(0.3);
+      setTimeout(() => !cancelled && shot(0.7), 250);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
 }
 
 export function BattleResultModal({ result, me, open, canGoBackToRoom, canRematch, rematchRequested, opponentRematchRequested, rematchBusy, onRematch, onClose, onBackToRooms }) {
+  const won = Boolean(result?.winnerId && result.winnerId === me);
+  useCelebration(Boolean(open && won && result?.battleId));
   if (!result) return null;
   const h = headline(result, me);
   const Icon = h.icon;
@@ -36,8 +56,10 @@ export function BattleResultModal({ result, me, open, canGoBackToRoom, canRematc
   return (
     <Modal open={open} onClose={canGoBackToRoom ? onClose : onBackToRooms} title="Battle result">
       <div className="space-y-5 text-center">
-        <div className={`mx-auto inline-flex size-16 items-center justify-center rounded-2xl border border-line bg-panel-2 ${h.tone}`}>
-          <Icon className="size-8" aria-hidden />
+        <div
+          className={`mx-auto inline-flex size-16 items-center justify-center rounded-2xl border bg-panel-2 ${h.tone} ${won ? 'pop-in border-progress/60 text-progress shadow-[0_0_40px_rgba(251,191,36,0.45)]' : 'border-line'}`}
+        >
+          <Icon className={`size-8 ${won ? 'animate-bounce' : ''}`} aria-hidden />
         </div>
         <div>
           <h2 className={`font-display text-3xl font-extrabold ${h.tone}`}>{h.title}</h2>
@@ -65,7 +87,7 @@ export function BattleResultModal({ result, me, open, canGoBackToRoom, canRematc
             {result.players.map((p) => (
               <tr key={p.userId} className="border-t border-line/60">
                 <td className="py-1.5 font-semibold">
-                  {p.name} {p.userId === me && <span className="font-normal text-violet-soft">(you)</span>} {p.userId === result.winnerId && '🏆'}
+                  {p.name} {p.userId === me && <span className="font-normal text-violet-soft">(you)</span>} {p.userId === result.winnerId && <Trophy className="inline size-3.5 text-progress" aria-label="Winner" />}
                 </td>
                 <td className="py-1.5 font-mono">{p.totalTests ? `${p.testsPassed}/${p.totalTests}` : '—'}</td>
                 <td className="py-1.5 text-right font-mono">{p.warnings ?? 0}</td>

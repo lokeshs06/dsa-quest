@@ -41,6 +41,19 @@ const sameId = (a, b) => String(a?._id ?? a) === String(b?._id ?? b);
 const codeOf = (req) => String(req.params.code ?? '').trim().toUpperCase();
 const emitToRoom = (roomId, event, payload) => getIo()?.to(String(roomId)).emit(event, payload);
 
+// GET /api/rooms/by-code/:code/messages?before=<message id> — older chat lines, a page at a time (members only)
+export const olderMessages = asyncHandler(async (req, res) => {
+  const room = await Room.findOne({ code: codeOf(req) }).select('+messages members').lean();
+  if (!room || !room.members.some((m) => sameId(m, req.userId))) throw new HttpError(404, 'Room not found');
+  const all = room.messages ?? [];
+  const limit = Math.min(Math.max(Number(req.query.limit) || HISTORY, 1), 100);
+  const at = req.query.before ? all.findIndex((m) => String(m._id) === String(req.query.before)) : all.length;
+  // A line that has since rolled off the end means there is nothing older left to give
+  const end = at < 0 ? 0 : at;
+  const start = Math.max(0, end - limit);
+  res.json({ messages: all.slice(start, end).map(publicMessage), hasOlder: start > 0 });
+});
+
 // GET /api/rooms/by-code/:code — everything the room page needs in one request
 export const getRoomByCode = asyncHandler(async (req, res) => {
   const code = codeOf(req);
@@ -152,6 +165,7 @@ export const getRoomByCode = asyncHandler(async (req, res) => {
     challenges: challenges.map((c) => c.toJSON()),
     judgeInfo: mine ? problemInfo(mine) : judgeInfo(problemData(1)),
     messages: (withMessages?.messages ?? []).slice(-HISTORY).map(publicMessage),
+    hasOlderMessages: (withMessages?.messages?.length ?? 0) > HISTORY,
     seat: room.kind === 'battle' ? { state: seatState(current, last), joinable: false, players: current ? current.players.map((p) => p.name) : [] } : null,
   });
 });

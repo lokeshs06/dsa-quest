@@ -8,6 +8,8 @@ export function BattleSettingsModal({
   onConfirm,
   confirmed,
   problemTitle,
+  players = [],
+  me,
 }) {
   return (
     <Modal open={open} onClose={onClose} title="Battle settings">
@@ -75,6 +77,16 @@ export function BattleSettingsModal({
 
         {/* Confirmation Section */}
         <div className="pt-2 border-t border-line flex flex-col gap-2">
+          {/* Both players edit the same settings; this shows, live, who has agreed to them */}
+          {players.length > 0 && (
+            <ul className="flex flex-wrap justify-center gap-2 text-xs" aria-label="Who has confirmed">
+              {players.map((p) => (
+                <li key={p.userId} className={`rounded-full border px-2.5 py-1 font-semibold ${p.settingsConfirmed ? 'border-solved/50 bg-solved/10 text-solved' : 'border-line text-muted'}`}>
+                  {p.userId === me ? 'You' : p.name}: {p.settingsConfirmed ? 'confirmed ✓' : 'not confirmed'}
+                </li>
+              ))}
+            </ul>
+          )}
           <button
             type="button"
             onClick={onConfirm}

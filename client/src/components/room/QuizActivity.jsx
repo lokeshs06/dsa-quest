@@ -13,10 +13,15 @@ export function QuizActivity({ socketRef, connected, roomId, user, members, onLi
   const [dismissed, setDismissed] = useState(null); // a finished quiz you closed
   const [busy, setBusy] = useState('');
 
+  // Tells the room what's on, so it can show a banner in every other view
   const live = Boolean(quiz && (quiz.status === 'lobby' || quiz.status === 'active'));
+  const liveId = live ? quiz.id : null;
+  const liveTopic = quiz?.topic;
+  const liveCount = quiz?.count;
+  const liveStatus = quiz?.status;
   useEffect(() => {
-    onLiveChange?.(live);
-  }, [live, onLiveChange]);
+    onLiveChange?.(liveId ? { id: liveId, topic: liveTopic, count: liveCount, status: liveStatus } : null);
+  }, [liveId, liveTopic, liveCount, liveStatus, onLiveChange]);
 
   const receive = useCallback((q) => {
     if (!q) return setQuiz(null);

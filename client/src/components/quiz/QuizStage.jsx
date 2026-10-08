@@ -71,12 +71,12 @@ function TimerRing({ left, total }) {
   const c = 2 * Math.PI * r;
   const share = total > 0 ? Math.max(0, Math.min(1, left / total)) : 0;
   return (
-    <span className="relative grid size-12 place-items-center" role="timer" aria-label={`${Math.ceil(left)} seconds left`}>
+    <span className={`relative grid size-20 shrink-0 place-items-center ${left <= 5 && left > 0 ? 'animate-pulse' : ''}`} role="timer" aria-label={`${Math.ceil(left)} seconds left`}>
       <svg viewBox="0 0 44 44" className="absolute inset-0 -rotate-90">
         <circle cx="22" cy="22" r={r} className="fill-none stroke-panel-2" strokeWidth="4" />
         <circle cx="22" cy="22" r={r} className={`fill-none transition-[stroke-dashoffset] duration-200 ${left <= 5 ? 'stroke-revision' : 'stroke-violet'}`} strokeWidth="4" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - share)} />
       </svg>
-      <span className={`font-display text-base font-bold ${left <= 5 ? 'text-revision' : 'text-ink'}`}>{Math.ceil(left)}</span>
+      <span className={`font-display text-3xl font-bold ${left <= 5 ? 'text-revision' : 'text-ink'}`}>{Math.ceil(left)}</span>
     </span>
   );
 }
@@ -110,7 +110,7 @@ function AnswerChart({ question }) {
   );
 }
 
-function Tile({ type, index, text, onClick, disabled, chosen, dim, mark, count }) {
+function Tile({ type, index, text, onClick, disabled, chosen, dim, mark, count, locked = false }) {
   const tile = tileFor(type, index);
   return (
     <div>
@@ -120,7 +120,7 @@ function Tile({ type, index, text, onClick, disabled, chosen, dim, mark, count }
         disabled={disabled}
         aria-pressed={chosen}
         aria-label={`${text}${mark === 'right' ? ', correct answer' : ''}${count !== undefined ? `, ${count} picked it` : ''}`}
-        className={`flex min-h-16 w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-base font-semibold text-white shadow-[inset_0_-4px_0_rgb(0_0_0/0.25)] transition ${tile.bg} ${dim ? 'opacity-35' : ''} ${chosen ? 'ring-4 ring-white/90 ring-offset-2 ring-offset-panel' : ''} ${disabled ? 'cursor-default' : 'hover:brightness-110 active:translate-y-px'}`}
+        className={`flex min-h-16 w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-base font-semibold text-white shadow-[inset_0_-4px_0_rgb(0_0_0/0.25)] transition ${tile.bg} ${dim ? 'opacity-35' : ''} ${chosen ? 'ring-4 ring-white/90 ring-offset-2 ring-offset-panel' : ''} ${chosen && locked ? 'lock-pulse' : ''} ${disabled ? 'cursor-default' : 'duration-75 hover:brightness-110 active:scale-95'}`}
       >
         <Shape shape={tile.shape} className="size-7" />
         <span className="flex-1 break-words">{text}</span>
@@ -267,15 +267,20 @@ function Question({ quiz, me, now, mine, onAnswer, canControl, busy, act }) {
         <span>
           <strong className="text-ink">{quiz.answeredCount}</strong> of {quiz.participants.length} answered
         </span>
-        <TimerRing left={left} total={q.timeLimit} />
       </TopBar>
-      <QuestionText text={q.q} />
+      {/* The clock sits right beside the question, big enough to read at a glance */}
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <QuestionText text={q.q} />
+        </div>
+        <TimerRing left={left} total={q.timeLimit} />
+      </div>
       {multi && playing && !locked && <p className="text-center text-xs text-muted">Pick every correct answer, then submit.</p>}
 
       <div className={`grid gap-2 ${q.options.length > 2 || q.type !== 'truefalse' ? 'sm:grid-cols-2' : 'grid-cols-2'}`}>
         {q.options.map((o, i) => {
           const chosen = (locked ?? picked).includes(i);
-          return <Tile key={i} type={q.type} index={i} text={o} onClick={() => choose(i)} disabled={!playing || Boolean(locked) || left <= 0} chosen={chosen} dim={Boolean(locked) && !chosen} />;
+          return <Tile key={i} type={q.type} index={i} text={o} onClick={() => choose(i)} disabled={!playing || Boolean(locked) || left <= 0} chosen={chosen} locked={Boolean(locked)} dim={Boolean(locked) && !chosen} />;
         })}
       </div>
 

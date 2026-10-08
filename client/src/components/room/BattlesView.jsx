@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bot, Check, Clock, LoaderCircle, LogOut, Settings as SettingsIcon, Swords, Timer, Trophy, User, Users } from 'lucide-react';
+import { Bot, Check, Clock, Eye, LoaderCircle, LogOut, Settings as SettingsIcon, Swords, Timer, Trophy, User, Users } from 'lucide-react';
 import { SEAT } from '../../lib/battleState.js';
 import { Avatar } from './ChatPanel.jsx';
 import { ProblemPicker } from './ProblemPicker.jsx';
@@ -129,12 +129,21 @@ function BattleLobby({ battle, me, battleRoom, busy, connected, onToggleReady, o
     >
       <div className="grid gap-3 sm:grid-cols-2">
         {seats.map((p, i) => (
-          <div key={p?.userId ?? `seat-${i}`} className={`flex items-center gap-3 rounded-xl border p-3 ${p?.ready ? 'border-solved/50 bg-solved/5' : 'border-line'}`}>
+          <div
+            key={p?.userId ?? `seat-${i}`}
+            className={`relative flex items-center gap-3 rounded-xl border p-3 transition-all duration-300 ${p?.ready ? 'scale-[1.01] border-solved/60 bg-solved/10 shadow-[0_0_24px_-8px] shadow-solved/50' : 'border-line'}`}
+          >
             {p ? <Avatar name={p.name} size="size-10" /> : <span className="grid size-10 place-items-center rounded-full border border-dashed border-line text-faint">{i === 0 ? <User className="size-4" /> : <Users className="size-4" />}</span>}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{p ? (p.userId === me ? `${p.name} (you)` : p.name) : battleRoom ? 'Open seat' : '—'}</p>
-              <p className={`text-xs ${p?.ready ? 'text-solved' : 'text-muted'}`}>{p ? (p.connected === false ? 'Disconnected' : p.ready ? 'Ready' : 'Not ready') : 'Share the room code with a friend'}</p>
+              <p className={`text-xs ${p?.ready ? 'font-semibold text-solved' : 'text-muted'}`}>{p ? (p.connected === false ? 'Disconnected' : p.ready ? 'Ready' : 'Not ready') : 'Share the room code with a friend'}</p>
             </div>
+            {/* A big tick drops in the moment someone readies up */}
+            {p?.ready && (
+              <span className="drop-in grid size-9 shrink-0 place-items-center rounded-full bg-solved text-abyss" aria-hidden>
+                <Check className="size-5" strokeWidth={3} />
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -160,13 +169,42 @@ function BattleLobby({ battle, me, battleRoom, busy, connected, onToggleReady, o
 
 // ---------------------------------------------------------------- the Battles view
 
-export function BattlesView({ battleRoom, members, me, battles, myBattle, seat, challenges, busy, connected, result, onChallenge, onPractice, onToggleReady, onOpenSettings, onLeaveBattle, onShowResult }) {
-  const [target, setTarget] = useState('');
+// Who you can challenge, as cards. Members who are busy or offline are shown greyed with the reason.
+function PlayerCards({ members, me, challenges, busy, onChallenge }) {
+  const pendingWith = (id) => challenges.some((c) => [c.challengerId, c.challengedId].includes(id));
+  const iHavePending = pendingWith(me);
+  const others = members.filter((m) => m.id !== me);
+  const why = (m) => (m.isBattling ? 'In a battle' : !m.online ? 'Offline' : pendingWith(m.id) ? 'Challenge pending' : iHavePending ? 'Your challenge is pending' : null);
+  const sorted = [...others].sort((a, b) => Number(Boolean(why(a))) - Number(Boolean(why(b))));
+  if (!others.length) return <p className="rounded-xl border border-dashed border-line p-4 text-center text-sm text-muted">Nobody else is in this room yet. Share the room code to invite a friend.</p>;
+  return (
+    <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Members you can challenge">
+      {sorted.map((m) => {
+        const blocked = why(m);
+        return (
+          <li key={m.id} className={`flex items-center gap-3 rounded-xl border p-3 transition ${blocked ? 'border-line opacity-60' : 'border-line hover:border-violet/50 hover:bg-panel-2/40'}`}>
+            <span className="relative">
+              <Avatar name={m.name} size="size-10" />
+              <span className={`absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-panel ${m.isBattling ? 'bg-revision' : m.online ? 'bg-solved' : 'bg-faint'}`} aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{m.name}</p>
+              <p className="truncate text-xs text-muted">{blocked ?? `Level ${m.level || 1} · ${m.xp || 0} XP`}</p>
+            </div>
+            <button type="button" className="btn-primary shrink-0 px-3 py-1.5 text-xs" onClick={() => onChallenge(m.id)} disabled={Boolean(blocked) || Boolean(busy)} aria-label={`Challenge ${m.name}`}>
+              {busy === `challenge:${m.id}` ? <LoaderCircle className="size-3.5 animate-spin" /> : <Swords className="size-3.5" />} Challenge
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export function BattlesView({ battleRoom, members, me, battles, myBattle, seat, challenges, busy, connected, result, onChallenge, onPractice, onToggleReady, onOpenSettings, onLeaveBattle, onShowResult, onWatch }) {
   const [problem, setProblem] = useState('random');
   const inLive = Boolean(myBattle && LIVE.includes(myBattle.status));
   const lobby = inLive && PRESTART.includes(myBattle.status) ? myBattle : null;
-  const pendingWith = (id) => challenges.some((c) => [c.challengerId, c.challengedId].includes(id));
-  const eligible = members.filter((m) => m.id !== me && m.online && !m.isBattling && !pendingWith(m.id));
   const others = battles.filter((b) => !b.players.some((p) => p.userId === me));
 
   return (
@@ -189,28 +227,7 @@ export function BattlesView({ battleRoom, members, me, battles, myBattle, seat, 
           ) : (
             <div className="space-y-4">
               <ProblemPicker value={problem} onChange={setProblem} disabled={Boolean(busy)} />
-              <form
-                className="flex flex-wrap items-end gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (target) onChallenge(target, problem);
-                }}
-              >
-                <label className="min-w-48 flex-1">
-                  <span className="label">Opponent</span>
-                  <select className="field" value={target} onChange={(e) => setTarget(e.target.value)} disabled={!eligible.length}>
-                    <option value="">{eligible.length ? 'Choose a member to challenge' : 'Nobody is free right now'}</option>
-                    {eligible.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button type="submit" className="btn-primary" disabled={!target || Boolean(busy)}>
-                  {busy?.startsWith('challenge:') ? <LoaderCircle className="size-4 animate-spin" /> : <Swords className="size-4" />} Send challenge
-                </button>
-              </form>
+              <PlayerCards members={members} me={me} challenges={challenges} busy={busy} onChallenge={(id) => onChallenge(id, problem)} />
               <div className="grid gap-2 sm:grid-cols-2">
                 <button type="button" onClick={() => onPractice('demo', problem)} disabled={Boolean(busy)} className="flex items-center gap-3 rounded-xl border border-line p-3 text-left transition hover:border-violet/40 hover:bg-panel-2/40 disabled:opacity-50">
                   {busy === 'demo' ? <LoaderCircle className="size-5 animate-spin text-muted" /> : <Bot className="size-5 text-muted" />}
@@ -249,6 +266,11 @@ export function BattlesView({ battleRoom, members, me, battles, myBattle, seat, 
                     <strong>{b.players.map((p) => p.name).join(' vs ')}</strong> <span className="text-muted">· {b.problem?.title} · {modeLabel(b.mode)}</span>
                   </p>
                   <span className={`rounded-full border px-2 py-0.5 text-xs ${b.status === 'active' ? 'border-revision/40 text-revision' : 'border-line text-muted'}`}>{statusLabel(b.status)}</span>
+                  {onWatch && b.mode !== 'solo' && (
+                    <button type="button" className="btn-ghost px-3 py-1 text-xs" onClick={() => onWatch(b.battleId)} disabled={busy === `watch:${b.battleId}`} aria-label={`Watch ${b.players.map((p) => p.name).join(' vs ')}`}>
+                      {busy === `watch:${b.battleId}` ? <LoaderCircle className="size-3.5 animate-spin" /> : <Eye className="size-3.5" />} Watch
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

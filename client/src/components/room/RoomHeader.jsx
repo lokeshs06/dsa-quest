@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Copy, Crown, ExternalLink, LogOut, MessageSquare, MoreHorizontal, Swords, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Copy, Crown, ExternalLink, LogOut, MessageSquare, MoreHorizontal, PanelRightOpen, Swords, Trash2 } from 'lucide-react';
 import { SEAT } from '../../lib/battleState.js';
 
 // One slim bar: what room this is, who's here, its code, and a menu for the rarer actions
-export function RoomHeader({ room, code, connected, onlineCount, memberCount, seat, inBattle, busy, onCopyCode, onExitBattle, onPickProblem, onLeave, onDelete }) {
+export function RoomHeader({ room, code, connected, onlineCount, memberCount, seat, inBattle, busy, onCopyCode, onExitBattle, onPickProblem, onLeave, onDelete, onShowMembers }) {
   const [menu, setMenu] = useState(false);
   const ref = useRef(null);
   const battleRoom = room?.kind === 'battle';
@@ -50,6 +50,11 @@ export function RoomHeader({ room, code, connected, onlineCount, memberCount, se
         </div>
 
         <div className="flex items-center gap-2">
+          {onShowMembers && (
+            <button type="button" className="hidden rounded-lg border border-line px-2.5 py-1.5 text-xs font-semibold text-muted hover:bg-panel-2 hover:text-ink lg:inline-flex lg:items-center lg:gap-1.5" onClick={onShowMembers} aria-label="Show members">
+              <PanelRightOpen className="size-3.5" aria-hidden /> Members
+            </button>
+          )}
           {inBattle && (
             <button type="button" className="btn-ghost px-3 py-1.5 text-xs text-revision" onClick={onExitBattle} disabled={Boolean(busy)}>
               <LogOut className="size-3.5" /> Exit Battle

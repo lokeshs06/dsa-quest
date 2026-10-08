@@ -36,6 +36,8 @@ export function view(room, userId, battle = null) {
     code: isMember ? room.code : undefined,
     currentProblem: room.currentProblem?.title ? room.currentProblem : null,
     lastActivity: room.lastActivity,
+    // A few faces for the room card (only when the list asked for names)
+    memberNames: room.members.slice(0, 5).map((m) => m?.name).filter(Boolean),
     ...(battle ? { battle } : {}),
   };
 }
@@ -101,13 +103,13 @@ export const createRoom = asyncHandler(async (req, res) => {
 
 // GET /api/rooms — public rooms anyone can join
 export const listRooms = asyncHandler(async (req, res) => {
-  const rooms = await Room.find({ isPublic: true }).sort({ lastActivity: -1 }).limit(30).populate('host', 'name');
+  const rooms = await Room.find({ isPublic: true }).sort({ lastActivity: -1 }).limit(30).populate('host', 'name').populate('members', 'name');
   res.json({ rooms: await withBattles(rooms, req.userId) });
 });
 
 // GET /api/rooms/mine
 export const myRooms = asyncHandler(async (req, res) => {
-  const rooms = await Room.find({ members: req.userId }).sort({ lastActivity: -1 }).populate('host', 'name');
+  const rooms = await Room.find({ members: req.userId }).sort({ lastActivity: -1 }).populate('host', 'name').populate('members', 'name');
   res.json({ rooms: await withBattles(rooms, req.userId) });
 });
 

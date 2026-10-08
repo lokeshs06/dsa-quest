@@ -26,6 +26,8 @@ const stepMs = () => num('BATTLE_COUNTDOWN_STEP_MS', 1000);
 const ABANDON_MS = 30 * 60 * 1000; // a lobby nobody touches for this long is cancelled
 
 export const channel = (battleId) => `battle:${battleId}`;
+// Room-mates watching a battle (never its players) listen here
+export const watchChannel = (battleId) => `watch:${battleId}`;
 const same = (a, b) => String(a?._id ?? a) === String(b?._id ?? b);
 const log = (err) => console.error('[battle]', err?.message ?? err);
 
@@ -216,7 +218,53 @@ export function battleResult(battle) {
 
 // ---------------------------------------------------------------- broadcasting
 const io = () => getIo();
-export const emitToBattle = (battle, event, payload) => io()?.to(channel(battle._id)).emit(event, payload);
+// Spectators get a copy of the events that describe the game, never anything private to one player
+const WATCHED = {
+  'battle:opponent_code': 'watch:code',
+  'battle:opponent_status': 'watch:status',
+  'battle:opponent_progress': 'watch:progress',
+  'battle:start': 'watch:start',
+  'battle:game_over': 'watch:over',
+};
+export function emitToWatchers(battleId, event, payload) {
+  io()?.to(watchChannel(battleId)).emit(event, { battleId: String(battleId), ...payload });
+}
+export function emitToBattle(battle, event, payload) {
+  io()?.to(channel(battle._id)).emit(event, payload);
+  if (WATCHED[event]) {
+    // Code goes to spectators only if the battle shows code at all
+    if (event === 'battle:opponent_code' && battle.settings?.showOpponentCode === false) return;
+    emitToWatchers(battle._id, WATCHED[event], payload);
+  }
+}
+
+// What a spectator sees when they start watching. Code only if the players can see each other's.
+export function watchView(battle) {
+  const b = typeof battle.toObject === 'function' ? battle.toObject() : battle;
+  const showCode = b.settings?.showOpponentCode !== false;
+  return {
+    battleId: String(b._id),
+    mode: b.mode ?? 'duel',
+    status: b.status,
+    problem: { title: b.problem?.title, difficulty: b.problem?.difficulty },
+    duration: b.settings?.duration ?? 0,
+    battleStartTime: b.battleStartTime,
+    showCode,
+    players: b.players.map((p) => {
+      const latest = pendingCode.get(`${b._id}:${p.userId}`);
+      return {
+        userId: String(p.userId),
+        name: p.name,
+        isBot: Boolean(p.isBot),
+        status: p.status,
+        testsPassed: p.testsPassed ?? 0,
+        totalTests: p.totalTests ?? 0,
+        language: latest?.language ?? p.language ?? 'python',
+        code: showCode ? (latest?.code ?? p.code ?? '') : undefined,
+      };
+    }),
+  };
+}
 
 // The battle state differs per viewer (code visibility), so each socket gets its own copy
 export async function pushState(battle) {

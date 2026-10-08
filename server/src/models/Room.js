@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
-export const MAX_ROOM_MESSAGES = 100;
+// Older lines are paged in as you scroll up; beyond this the oldest are dropped
+export const MAX_ROOM_MESSAGES = 500;
 
 // One chat line. System lines (battle results, quiz announcements) have no sender.
 const messageSchema = new mongoose.Schema(

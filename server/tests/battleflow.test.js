@@ -478,6 +478,64 @@ describe('choosing the problem', () => {
   });
 });
 
+describe('watching a battle, chat history and room cards', () => {
+  const P = {};
+  let room;
+  beforeAll(async () => {
+    for (const name of ['Kim', 'Lou', 'Max']) P[name] = await registerUser(app, name);
+    room = (await api.createRoom(P.Kim, 'Watch party')).body.room;
+    await api.joinRoom(P.Lou, room.code).expect(200);
+    await api.joinRoom(P.Max, room.code).expect(200);
+  });
+
+  test('a room-mate can watch a live battle read-only: code, progress and the result; players and outsiders cannot', async () => {
+    const k = await open(P.Kim, { roomCode: room.code, roomId: room.id });
+    const l = await open(P.Lou, { roomCode: room.code, roomId: room.id });
+    const m = await open(P.Max, { roomId: room.id });
+    const sent = (await api.challenge(P.Kim, room.code, P.Lou).expect(201)).body.challenge;
+    const battleId = (await api.accept(P.Lou, room.code, sent.challengeId).expect(200)).body.battle.id;
+    await startBattle(k, l, room.code);
+
+    const watching = await ask(m, 'battle:watch', { battleId });
+    expect(watching.ok).toBe(true);
+    expect(watching.battle).toMatchObject({ status: 'active', showCode: true, problem: { title: 'Largest Element' } });
+    expect(watching.battle.players.map((x) => x.name).sort()).toEqual(['Kim', 'Lou']);
+
+    const code = next(m, 'watch:code', 3000);
+    k.emit('battle:code_update', { roomCode: room.code, seq: 1, code: BAD, language: 'python' });
+    expect(await code).toMatchObject({ battleId, userId: P.Kim.id, code: BAD });
+
+    expect((await ask(k, 'battle:watch', { battleId })).error).toMatch(/playing in this battle/);
+    const stranger = await registerUser(app, 'Nia');
+    const n = await open(stranger);
+    expect((await ask(n, 'battle:watch', { battleId })).ok).toBe(false);
+
+    const over = next(m, 'watch:over', 20000);
+    await request(app).post(`/api/battles/${room.code}/submit`).set(auth(P.Kim)).send({ language: 'python', code: GOOD }).expect(200);
+    expect(await over).toMatchObject({ battleId, winnerName: 'Kim' });
+    expect((await ask(m, 'battle:watch', { battleId })).error).toMatch(/ended/);
+  }, 30000);
+
+  test('chat history pages back past the first screenful', async () => {
+    const { saveRoomMessage } = await import('../src/services/realtime.js');
+    for (let i = 1; i <= 70; i += 1) await saveRoomMessage(room.id, { userId: P.Kim.id, name: 'Kim', message: `line ${i}` });
+    const first = (await api.byCode(P.Kim, room.code).expect(200)).body;
+    expect(first.messages).toHaveLength(50);
+    expect(first.hasOlderMessages).toBe(true);
+    const page = (await request(app).get(`/api/rooms/by-code/${room.code}/messages?before=${first.messages[0].id}`).set(auth(P.Kim)).expect(200)).body;
+    expect(page.messages.at(-1).id).not.toBe(first.messages[0].id);
+    const all = [...page.messages, ...first.messages].filter((x) => /^line /.test(x.message));
+    expect(all.map((x) => x.message)).toEqual(Array.from({ length: 70 }, (_, i) => `line ${i + 1}`));
+    const outsider = await registerUser(app, 'Ola');
+    await request(app).get(`/api/rooms/by-code/${room.code}/messages`).set(auth(outsider)).expect(404);
+  });
+
+  test('room cards carry a few member names', async () => {
+    const mine = (await request(app).get('/api/rooms/mine').set(auth(P.Max)).expect(200)).body.rooms;
+    expect(mine.find((r) => r.code === room.code).memberNames).toEqual(['Kim', 'Lou', 'Max']);
+  });
+});
+
 describe('room lists show battle state', () => {
   test('battle rooms carry a seat state; chat rooms show live battles', async () => {
     const code = (await api.createBattle(U.Fay, { isPublic: true })).body.room.code;

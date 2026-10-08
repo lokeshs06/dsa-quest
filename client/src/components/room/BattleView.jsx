@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -34,9 +34,71 @@ const LANGUAGES = {
   rust: 'Rust',
 };
 
+// The console's height is yours to drag; it's remembered on this device
+const CONSOLE_KEY = 'dsa-quest:battle-console-height';
+const CONSOLE_MIN = 96;
+const CONSOLE_MAX = 640;
+const savedConsoleHeight = () => {
+  try {
+    const n = Number(localStorage.getItem(CONSOLE_KEY));
+    return n >= CONSOLE_MIN && n <= CONSOLE_MAX ? n : 240;
+  } catch {
+    return 240;
+  }
+};
+
+function useConsoleHeight() {
+  const [height, setHeight] = useState(savedConsoleHeight);
+  const drag = useRef(null);
+  const set = (h) => {
+    const next = Math.round(Math.min(CONSOLE_MAX, Math.max(CONSOLE_MIN, h)));
+    setHeight(next);
+    try {
+      localStorage.setItem(CONSOLE_KEY, String(next));
+    } catch {
+      /* kept for this visit only */
+    }
+  };
+  const handleProps = {
+    role: 'separator',
+    'aria-orientation': 'horizontal',
+    'aria-label': 'Resize the console',
+    'aria-valuemin': CONSOLE_MIN,
+    'aria-valuemax': CONSOLE_MAX,
+    'aria-valuenow': height,
+    tabIndex: 0,
+    onPointerDown: (e) => {
+      drag.current = { y: e.clientY, h: height };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    onPointerMove: (e) => {
+      if (drag.current) set(drag.current.h + (drag.current.y - e.clientY));
+    },
+    onPointerUp: () => {
+      drag.current = null;
+    },
+    onKeyDown: (e) => {
+      if (e.key === 'ArrowUp') set(height + 24);
+      if (e.key === 'ArrowDown') set(height - 24);
+    },
+  };
+  return { height, handleProps };
+}
+
+// Calm with plenty of time, amber under 3 minutes, red under 1
+function timerTone(left) {
+  if (left === null || left === undefined) return { box: 'border-line text-ink', icon: '' };
+  if (left <= 60) return { box: 'border-revision/60 bg-revision/10 text-revision', icon: 'animate-bounce' };
+  if (left <= 180) return { box: 'border-progress/50 text-progress animate-pulse', icon: '' };
+  if (left <= 300) return { box: 'border-line text-ink', icon: '' };
+  return { box: 'border-line text-muted', icon: '' };
+}
+
 export function BattleView({
   roomCode,
   timerText,
+  timeLeft = null,
+  unreadChat = 0,
   user,
   opponentPlayer,
   myStatus,
@@ -87,6 +149,8 @@ export function BattleView({
   onExit,
   exiting,
 }) {
+  const consoleSize = useConsoleHeight();
+  const tone = timerTone(timeLeft);
   return (
     <div className={`flex flex-col gap-2 min-h-screen ${isBattleMode ? 'fixed inset-0 z-50 bg-abyss p-3' : 'pb-8'} animate-in fade-in duration-200`}>
       {/* Disconnection Banner */}
@@ -116,8 +180,8 @@ export function BattleView({
         </div>
 
         {/* Server Authoritative Live Timer */}
-        <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-panel-2 border border-line text-sm font-mono font-bold text-amber-400 shadow-inner">
-          <Timer className="size-4" />
+        <div className={`flex items-center gap-2 rounded-xl border bg-panel-2 px-3 py-1 font-mono text-sm font-bold shadow-inner transition-colors ${tone.box}`} role="timer" aria-label={timeLeft !== null ? `${timerText} left` : `${timerText} elapsed`}>
+          <Timer className={`size-4 ${tone.icon}`} aria-hidden />
           <span>{timerText}</span>
         </div>
 
@@ -176,6 +240,11 @@ export function BattleView({
             >
               <MessageSquare className="size-3.5" />
               Chat
+              {!battleChatOpen && unreadChat > 0 && (
+                <span className="pop-in ml-0.5 min-w-4 rounded-full bg-revision px-1 text-center text-[10px] font-bold leading-4 text-white" aria-label={`${unreadChat} unread`}>
+                  {unreadChat > 9 ? '9+' : unreadChat}
+                </span>
+              )}
             </button>
           )}
 
@@ -188,15 +257,16 @@ export function BattleView({
             Problem
           </button>
 
-          <span
-            className={`chip text-xs font-semibold inline-flex items-center gap-1 ${
-              warnings > 0 ? 'border-red-500/50 bg-red-500/20 text-red-300' : 'border-line text-muted'
-            }`}
-            title="Anti-cheat warnings"
-          >
-            <ShieldAlert className="size-3" />
-            {warnings}/3
-          </span>
+          {/* Only once there is something to warn about; it pings when a new warning lands */}
+          {warnings > 0 && (
+            <span key={warnings} className="relative inline-flex" title="Anti-cheat warnings: copying, pasting or leaving fullscreen">
+              <span className="absolute inset-0 animate-ping rounded-full ring-2 ring-revision [animation-iteration-count:2]" aria-hidden />
+              <span className="chip relative inline-flex items-center gap-1 border-revision/50 bg-revision/20 text-xs font-semibold text-revision">
+                <ShieldAlert className="size-3" aria-hidden />
+                {warnings}/3 warnings
+              </span>
+            </span>
+          )}
 
           <button
             onClick={onToggleFullscreen}
@@ -350,7 +420,16 @@ export function BattleView({
 
           {/* Console Section */}
           {consoleOpen && (
-            <div className="h-44 border-t border-line overflow-y-auto p-3 text-xs font-mono bg-abyss/90 space-y-2">
+            <div
+              {...consoleSize.handleProps}
+              className="group flex h-2.5 cursor-row-resize touch-none items-center justify-center border-t border-line bg-panel-2/60 hover:bg-violet/20 focus-visible:bg-violet/20 focus-visible:outline-none"
+              title="Drag to resize the console"
+            >
+              <span className="h-0.5 w-10 rounded-full bg-faint group-hover:bg-violet-soft" aria-hidden />
+            </div>
+          )}
+          {consoleOpen && (
+            <div style={{ height: consoleSize.height }} className="overflow-y-auto p-3 text-xs font-mono bg-abyss/90 space-y-2">
               {myRunResult ? (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-muted">

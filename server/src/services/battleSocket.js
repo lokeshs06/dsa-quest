@@ -10,6 +10,9 @@ import {
   battleView,
   channel,
   emitToBattle,
+  emitToWatchers,
+  watchChannel,
+  watchView,
   exitBattle,
   liveBattleFor,
   playerDisconnected,
@@ -139,14 +142,41 @@ export function setupBattleSocket(io, socket) {
       cursorCh: Number(p.cursorCh) || 1,
       language: LANGUAGES.includes(p.language) ? p.language : 'python',
     };
-    if (battle.showOpponentCode) socket.to(room).emit('battle:opponent_code', { userId, seq: Number(p.seq) || 0, ...update });
+    if (battle.showOpponentCode) {
+      socket.to(room).emit('battle:opponent_code', { userId, seq: Number(p.seq) || 0, ...update });
+      emitToWatchers(battleId, 'watch:code', { userId, seq: Number(p.seq) || 0, ...update });
+    }
     saveCodeSoon(battleId, userId, update);
   });
 
   on('battle:status_update', async (p) => {
     if (!['Coding', 'Typing', 'Idle'].includes(p.status)) return;
     const battle = await liveBattleFor(userId, codeOf(p));
-    if (battle?.status === 'active') socket.to(channel(battle._id)).emit('battle:opponent_status', { userId, status: p.status });
+    if (battle?.status === 'active') {
+      socket.to(channel(battle._id)).emit('battle:opponent_status', { userId, status: p.status });
+      emitToWatchers(battle._id, 'watch:status', { userId, status: p.status });
+    }
+  });
+
+  // 4b. Watching someone else's battle in your room: read-only, and never one you're playing in
+  const leaveWatching = () => {
+    // Collected first: leaving changes socket.rooms
+    const watched = [...socket.rooms].filter((r) => r.startsWith('watch:'));
+    for (const r of watched) socket.leave(r);
+  };
+  on('battle:watch', async (p) => {
+    if (typeof p.battleId !== 'string' || !/^[a-f\d]{24}$/i.test(p.battleId)) throw new HttpError(400, 'Battle not found.');
+    const battle = await Battle.findById(p.battleId);
+    if (!battle || !['countdown', 'active', ...PRESTART].includes(battle.status)) throw new HttpError(404, 'That battle has ended.');
+    const room = await Room.findOne({ code: battle.roomCode }).select('members');
+    if (!room || !room.members.some((m) => same(m, userId))) throw new HttpError(404, 'Battle not found.');
+    if (battle.players.some((x) => same(x.userId, userId))) throw new HttpError(400, 'You’re playing in this battle.');
+    leaveWatching();
+    socket.join(watchChannel(battle._id));
+    return { battle: watchView(battle) };
+  });
+  on('battle:unwatch', async () => {
+    leaveWatching();
   });
 
   // 5. Anti-cheat signals. Copy/cut/paste and leaving fullscreen count as warnings; blur and tab switches

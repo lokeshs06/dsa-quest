@@ -1,13 +1,56 @@
-import { Crown, LoaderCircle, Map as MapIcon, Mic, MicOff, PhoneOff, Swords } from 'lucide-react';
+import { Crown, Map as MapIcon, Mic, MicOff, PanelLeftClose, PanelLeftOpen, PanelRightClose, PhoneOff } from 'lucide-react';
 import { Avatar } from './ChatPanel.jsx';
 
 // ---------------------------------------------------------------- left rail: the room's views, voice and activity
 
-export function RoomNav({ views, view, onView, voiceEnabled, voiceStatus, connected, onJoinVoice, onToggleMute, onLeaveVoice, activity }) {
+export function RoomNav({ views, view, onView, voiceEnabled, voiceStatus, connected, onJoinVoice, onToggleMute, onLeaveVoice, activity, collapsed = false, onToggleCollapsed }) {
+  // Collapsed: just the icons, so the main view gets the room it needs
+  if (collapsed) {
+    return (
+      <nav className="flex h-full flex-col items-center gap-1 overflow-y-auto rounded-2xl border border-line bg-panel py-2" aria-label="Room sections">
+        <button type="button" onClick={onToggleCollapsed} className="mb-1 rounded-lg p-2 text-muted hover:bg-panel-2 hover:text-ink" aria-label="Expand the side panel" title="Expand">
+          <PanelLeftOpen className="size-4" />
+        </button>
+        {views.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            onClick={() => onView(v.id)}
+            aria-current={view === v.id ? 'page' : undefined}
+            aria-label={v.label}
+            title={v.label}
+            className={`relative rounded-lg p-2 ${view === v.id ? 'bg-panel-2 text-ink' : 'text-muted hover:bg-panel-2/50 hover:text-ink'}`}
+          >
+            <v.icon className="size-4.5" aria-hidden />
+            {v.badge ? <span className={`absolute right-1 top-1 size-2 rounded-full ${v.badge === 'Live' ? 'animate-pulse bg-revision' : 'bg-violet'}`} aria-hidden /> : null}
+          </button>
+        ))}
+        {voiceEnabled && (
+          <button
+            type="button"
+            onClick={voiceStatus.inVoice ? onToggleMute : onJoinVoice}
+            disabled={!connected}
+            className={`mt-2 rounded-lg p-2 hover:bg-panel-2 ${voiceStatus.inVoice ? (voiceStatus.isMuted ? 'text-revision' : 'text-solved') : 'text-muted'}`}
+            aria-label={voiceStatus.inVoice ? (voiceStatus.isMuted ? 'Unmute' : 'Mute') : 'Join voice'}
+            title={voiceStatus.inVoice ? (voiceStatus.isMuted ? 'Unmute' : 'Mute') : 'Join voice'}
+          >
+            {voiceStatus.inVoice && voiceStatus.isMuted ? <MicOff className="size-4.5" /> : <Mic className="size-4.5" />}
+          </button>
+        )}
+      </nav>
+    );
+  }
   return (
     <nav className="flex h-full flex-col gap-5 overflow-y-auto rounded-2xl border border-line bg-panel p-3" aria-label="Room sections">
       <div>
-        <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Room</p>
+        <div className="flex items-center justify-between px-2 pb-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-faint">Room</p>
+          {onToggleCollapsed && (
+            <button type="button" onClick={onToggleCollapsed} className="rounded-md p-1 text-faint hover:bg-panel-2 hover:text-ink" aria-label="Collapse the side panel" title="Collapse">
+              <PanelLeftClose className="size-3.5" />
+            </button>
+          )}
+        </div>
         <ul className="space-y-0.5">
           {views.map((v) => (
             <li key={v.id}>
@@ -19,7 +62,9 @@ export function RoomNav({ views, view, onView, voiceEnabled, voiceStatus, connec
               >
                 <v.icon className="size-4 shrink-0" aria-hidden />
                 <span className="flex-1 text-left">{v.label}</span>
-                {v.badge ? <span className="rounded-full bg-violet/25 px-1.5 text-[11px] font-semibold text-violet-soft">{v.badge}</span> : null}
+                {v.badge ? (
+                  <span className={`rounded-full px-1.5 text-[11px] font-semibold ${v.badge === 'Live' ? 'animate-pulse bg-revision/20 text-revision' : 'bg-violet/25 text-violet-soft'}`}>{v.badge}</span>
+                ) : null}
               </button>
             </li>
           ))}
@@ -76,30 +121,12 @@ export function VoiceControls({ voiceStatus, connected, onJoinVoice, onToggleMut
 }
 
 // ---------------------------------------------------------------- right rail: who is here
+// Challenging someone happens in the Battles view (one place for it); here you see who's around.
 
-export function MemberList({ members, me, battleRoom, challenges, inLiveBattle, busy, onChallenge, onViewMap }) {
+export function MemberList({ members, me, onViewMap, onCollapse }) {
   const battling = members.filter((m) => m.isBattling);
   const online = members.filter((m) => !m.isBattling && m.online);
   const offline = members.filter((m) => !m.isBattling && !m.online);
-  const pendingWith = (id) => challenges.some((c) => [c.challengerId, c.challengedId].includes(id));
-  const iHavePending = pendingWith(me);
-
-  const action = (m) => {
-    if (m.id === me || battleRoom) return null;
-    if (m.isBattling) return null;
-    if (inLiveBattle || !m.online || iHavePending || pendingWith(m.id)) return null;
-    return (
-      <button
-        type="button"
-        onClick={() => onChallenge(m.id)}
-        disabled={Boolean(busy)}
-        className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-2 py-1 text-[11px] font-semibold text-muted transition hover:border-violet/50 hover:text-ink disabled:opacity-50"
-        aria-label={`Challenge ${m.name}`}
-      >
-        {busy === `challenge:${m.id}` ? <LoaderCircle className="size-3 animate-spin" /> : <Swords className="size-3" />} {busy === `challenge:${m.id}` ? 'Sending' : 'Challenge'}
-      </button>
-    );
-  };
 
   const group = (title, list) =>
     list.length > 0 && (
@@ -122,15 +149,18 @@ export function MemberList({ members, me, battleRoom, challenges, inLiveBattle, 
                 </p>
                 <p className="truncate text-[11px] text-faint">{m.isBattling ? `In a battle${m.battlingWith ? ` vs ${m.battlingWith}` : ''}` : `Level ${m.level || 1} · ${m.xp || 0} XP`}</p>
               </div>
-              {/* On wide screens the actions float over the row on hover, so they never squeeze the name */}
-              <div className="flex shrink-0 items-center gap-1 lg:absolute lg:right-1.5 lg:top-1/2 lg:-translate-y-1/2 lg:rounded-md lg:bg-panel-2 lg:p-0.5 lg:opacity-0 lg:transition lg:group-hover:opacity-100 lg:focus-within:opacity-100">
-                {action(m)}
-                {onViewMap && m.id !== me && (
-                  <button type="button" onClick={() => onViewMap(m)} className="rounded-md p-1 text-faint hover:bg-panel hover:text-ink" aria-label={`${m.name}'s quest map`} title="Quest map">
-                    <MapIcon className="size-3.5" />
-                  </button>
-                )}
-              </div>
+              {/* On wide screens the button floats over the row on hover, so it never squeezes the name */}
+              {onViewMap && m.id !== me && (
+                <button
+                  type="button"
+                  onClick={() => onViewMap(m)}
+                  className="shrink-0 rounded-md p-1 text-faint hover:bg-panel hover:text-ink lg:absolute lg:right-1.5 lg:top-1/2 lg:-translate-y-1/2 lg:bg-panel-2 lg:opacity-0 lg:transition lg:group-hover:opacity-100 lg:focus:opacity-100"
+                  aria-label={`${m.name}'s quest map`}
+                  title="Quest map"
+                >
+                  <MapIcon className="size-3.5" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -139,7 +169,14 @@ export function MemberList({ members, me, battleRoom, challenges, inLiveBattle, 
 
   return (
     <aside className="h-full overflow-y-auto rounded-2xl border border-line bg-panel p-3" aria-label="Members">
-      <p className="px-2 pb-2 text-sm font-semibold">Members</p>
+      <div className="flex items-center justify-between px-2 pb-2">
+        <p className="text-sm font-semibold">Members</p>
+        {onCollapse && (
+          <button type="button" onClick={onCollapse} className="rounded-md p-1 text-faint hover:bg-panel-2 hover:text-ink" aria-label="Hide members" title="Hide members">
+            <PanelRightClose className="size-3.5" />
+          </button>
+        )}
+      </div>
       {group('In battle', battling)}
       {group('Online', online)}
       {group('Offline', offline)}

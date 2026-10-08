@@ -92,6 +92,7 @@ import {
 } from '../controllers/battle.controller.js';
 import {
   getRoomByCode,
+  olderMessages,
   sendChallenge,
   acceptChallenge,
   declineChallenge,
@@ -223,6 +224,7 @@ router.get('/rooms/:id/members/:userId/map', requireAuth, memberMap);
 router.post('/rooms/:id/leave', requireAuth, leaveRoom);
 router.delete('/rooms/:id', requireAuth, deleteRoom);
 router.get('/rooms/by-code/:code', requireAuth, getRoomByCode);
+router.get('/rooms/by-code/:code/messages', requireAuth, olderMessages);
 router.post('/rooms/:code/challenge', requireAuth, validate(challengeSendSchema), sendChallenge);
 router.post('/rooms/:code/challenge/demo', requireAuth, validate(battleProblemSchema), startDemoChallenge);
 router.post('/rooms/:code/challenge/solo', requireAuth, validate(battleProblemSchema), startSoloBattle);

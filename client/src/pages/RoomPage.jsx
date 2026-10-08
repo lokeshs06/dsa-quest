@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, LoaderCircle, MessageCircle, Swords } from 'lucide-react';
+import { ArrowLeft, Brain, LoaderCircle, MessageCircle, RotateCcw, Swords, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_URL, api, errorMessage, tokenStore } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -23,6 +23,7 @@ import { BattleCountdown } from '../components/room/BattleCountdown.jsx';
 import { BattleView } from '../components/room/BattleView.jsx';
 import { BattleResultModal } from '../components/room/BattleResultModal.jsx';
 import { MemberMap } from '../components/room/MemberMap.jsx';
+import { SpectateView } from '../components/room/SpectateView.jsx';
 
 // The API serves the socket too. On localhost the client talks to port 5000 directly (the Vite proxy can drop
 // WebSocket handshakes); VITE_SOCKET_URL overrides that.
@@ -36,7 +37,23 @@ const SOCKET_URL =
 
 const LIVE = ['waiting', 'lobby', 'settings', 'countdown', 'active'];
 const CODE_STREAM_MS = 80;
-const MAX_CHAT = 200;
+const MAX_CHAT = 600;
+// Per-device layout choices: a collapsed side panel, hidden members
+const LAYOUT_KEY = 'dsa-quest:room-layout';
+const loadLayout = () => {
+  try {
+    return { navCollapsed: false, membersHidden: false, ...JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}') };
+  } catch {
+    return { navCollapsed: false, membersHidden: false };
+  }
+};
+const saveLayout = (layout) => {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  } catch {
+    /* kept for this visit only */
+  }
+};
 const seenKey = (battleId) => `dsaq_result_seen_${battleId}`;
 const wasSeen = (battleId) => {
   try {
@@ -161,7 +178,24 @@ function Room({ code }) {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   // Which part of the room is shown: chat, battles or quiz (and members, on phones)
   const [view, setView] = useState('chat');
-  const [quizLive, setQuizLive] = useState(false);
+  const [quizInfo, setQuizInfo] = useState(null); // the quiz open in this room, if any
+  const [quizBannerHidden, setQuizBannerHidden] = useState(null); // id of the quiz whose banner you closed
+  const quizLive = Boolean(quizInfo);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [unreadChat, setUnreadChat] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [watching, setWatching] = useState(null); // { battle, result } while you spectate someone else's battle
+  const [layout, setLayout] = useState(loadLayout);
+  const updateLayout = (patch) =>
+    setLayout((l) => {
+      const next = { ...l, ...patch };
+      saveLayout(next);
+      return next;
+    });
+  // Socket handlers outlive renders, so they read these through refs
+  const viewRef = useRef(view);
+  const resultOpenRef = useRef(false);
+  const rematchRef = useRef(null);
 
   // ---- results, exits, rematches
   const [result, setResult] = useState(null);
@@ -188,6 +222,10 @@ function Room({ code }) {
   useEffect(() => {
     myBattleRef.current = myBattle;
   }, [myBattle]);
+  useEffect(() => {
+    viewRef.current = view;
+    resultOpenRef.current = resultOpen;
+  });
 
   const roomId = room?.id;
   const isMember = phase === 'ready';
@@ -204,6 +242,13 @@ function Room({ code }) {
       const ids = new Set(list.map((m) => m.id));
       const fresh = incoming.filter((m) => !ids.has(m.id));
       return fresh.length ? [...list, ...fresh].slice(-MAX_CHAT) : list;
+    });
+  }, []);
+  // Older history goes in front, never trimmed away straight after you asked for it
+  const prependMessages = useCallback((older) => {
+    setMessages((list) => {
+      const ids = new Set(list.map((m) => m.id));
+      return [...older.filter((m) => !ids.has(m.id)), ...list];
     });
   }, []);
   const systemLine = useCallback((text) => addMessages([{ id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, type: 'system', message: text, at: new Date().toISOString() }]), [addMessages]);
@@ -267,6 +312,7 @@ function Room({ code }) {
       setChallenges(data.challenges ?? (data.activeChallenge ? [data.activeChallenge] : []));
       setJudgeInfo(data.judgeInfo ?? null);
       addMessages(data.messages ?? []);
+      setHasOlder(Boolean(data.hasOlderMessages));
       applyMyBattle(data.myBattle, data.judgeInfo);
       if (data.lastResult && !wasSeen(data.lastResult.battleId)) showResult(data.lastResult);
       setPhase('ready');
@@ -345,7 +391,11 @@ function Room({ code }) {
         systemLine(`${name} left the room`);
         refreshRoom();
       });
-      socket.on('room:member_solved', (m) => systemLine(`${m.name} cleared ${m.title} (+${m.xp} XP)`));
+      socket.on('room:member_solved', (m) => {
+        systemLine(`${m.name} cleared ${m.title} (+${m.xp} XP)`);
+        // Not looking at the chat? Show it anyway, briefly
+        if (viewRef.current !== 'chat' && m.userId !== me) toast(`${m.name} just cleared ${m.title}`, { icon: '⚡', duration: 4000 });
+      });
       socket.on('room:problem_changed', (p) => {
         setRoom((r) => (r ? { ...r, currentProblem: p } : r));
         systemLine(`${p.setBy} picked "${p.title}" for the group`);
@@ -413,8 +463,9 @@ function Room({ code }) {
       });
       socket.on('battle:start', ({ battleStartTime, settings }) => {
         setCountdown('GO');
+        setUnreadChat(0);
         battleAudio.playGo();
-        setTimeout(() => setCountdown(null), 1000);
+        setTimeout(() => setCountdown(null), 700);
         setMyBattle((b) => (b ? { ...b, status: 'active', battleStartTime, settings: settings ?? b.settings } : b));
         setOpponentStatus('Coding');
         if (settings?.fullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().then(() => setIsBattleMode(true)).catch(() => {});
@@ -487,14 +538,47 @@ function Room({ code }) {
       socket.on('battle:rematch_requested', ({ userId }) => {
         if (userId === me) return;
         setOpponentRematchRequested(true);
-        toast('Your opponent wants a rematch!', { icon: '🔄' });
+        if (resultOpenRef.current) return; // the result window already offers "Accept rematch"
+        // The result was closed: an offer that stays until you answer it
+        toast.custom(
+          (t) => (
+            <div className="flex items-center gap-3 rounded-xl border border-violet/40 bg-panel px-4 py-3 text-sm shadow-xl" role="alert">
+              <RotateCcw className="size-4 shrink-0 text-violet-soft" aria-hidden />
+              <span className="font-semibold">Your opponent wants a rematch!</span>
+              <button
+                type="button"
+                className="btn-primary px-3 py-1 text-xs"
+                onClick={() => {
+                  toast.dismiss(t.id);
+                  rematchRef.current?.();
+                }}
+              >
+                Accept
+              </button>
+              <button type="button" className="btn-ghost px-3 py-1 text-xs" onClick={() => toast.dismiss(t.id)}>
+                Decline
+              </button>
+            </div>
+          ),
+          { id: 'rematch-offer', duration: Infinity }
+        );
       });
       socket.on('battle:rematch_started', ({ battle, judgeInfo: info }) => {
+        toast.dismiss('rematch-offer');
         setResultOpen(false);
         setResult(null);
         applyMyBattle(battle, info);
         toast.success('Rematch! Ready up when you are.');
       });
+      // Someone else's battle you're watching
+      const watched = (battleId, update) => setWatching((w) => (w && w.battle.battleId === battleId ? update(w) : w));
+      const updatePlayer = (w, userId, patch) => ({ ...w, battle: { ...w.battle, players: w.battle.players.map((p) => (p.userId === userId ? { ...p, ...patch } : p)) } });
+      socket.on('watch:code', ({ battleId, userId, code: theirs, language }) => watched(battleId, (w) => updatePlayer(w, userId, { code: theirs, ...(language ? { language } : {}) })));
+      socket.on('watch:status', ({ battleId, userId, status }) => watched(battleId, (w) => updatePlayer(w, userId, { status })));
+      socket.on('watch:progress', ({ battleId, userId, status, testsPassed, totalTests }) => watched(battleId, (w) => updatePlayer(w, userId, { status, testsPassed, totalTests })));
+      socket.on('watch:start', ({ battleId, battleStartTime }) => watched(battleId, (w) => ({ ...w, battle: { ...w.battle, status: 'active', battleStartTime } })));
+      socket.on('watch:over', (res) => watched(res.battleId, (w) => ({ ...w, battle: { ...w.battle, status: 'finished' }, result: res })));
+
       socket.on('battle:error', ({ message }) => {
         toast.error(message);
         setRunningAction('');
@@ -519,7 +603,8 @@ function Room({ code }) {
     const tick = () => {
       const elapsed = Math.floor(Math.max(0, Date.now() - start) / 1000);
       const shown = duration > 0 ? Math.max(0, duration - elapsed) : elapsed;
-      setTimerText(`⏱️ ${String(Math.floor(shown / 60)).padStart(2, '0')}:${String(shown % 60).padStart(2, '0')}`);
+      setTimerText(`${String(Math.floor(shown / 60)).padStart(2, '0')}:${String(shown % 60).padStart(2, '0')}`);
+      setTimeLeft(duration > 0 ? shown : null);
       if (duration > 0 && shown <= 30 && shown > 0 && !warned) {
         warned = true;
         battleAudio.playWarning();
@@ -534,6 +619,17 @@ function Room({ code }) {
   useEffect(() => {
     battleAudio.setEnabled(myBattle?.settings?.soundEffects !== false);
   }, [myBattle?.settings?.soundEffects]);
+
+  // Unread room chat while the battle's chat drawer is closed (your own messages don't count)
+  const seenChat = useRef(messages.length);
+  useEffect(() => {
+    const fresh = messages.slice(seenChat.current);
+    seenChat.current = messages.length;
+    if (arena && !battleChatOpen) {
+      const others = fresh.filter((m) => m.userId !== me && m.type !== 'system').length;
+      if (others) setUnreadChat((n) => n + others);
+    }
+  }, [messages, arena, battleChatOpen, me]);
 
 
   // ---- anti-cheat while the battle runs (if the battle turned it on)
@@ -738,6 +834,34 @@ function Room({ code }) {
       if (!res.ok) throw new Error(res.error);
       setRematchRequested(true);
     });
+  useEffect(() => {
+    rematchRef.current = requestRematch;
+  });
+
+  // Chat lines from before the first screenful
+  const loadOlder = async () => {
+    const before = messages.find((m) => !String(m.id).startsWith('local_'))?.id;
+    try {
+      const { data } = await api.get(`/rooms/by-code/${code}/messages`, { params: before ? { before } : {} });
+      prependMessages(data.messages);
+      setHasOlder(data.hasOlder);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  };
+
+  // Watching someone else's battle, read-only
+  const watch = (battleId) =>
+    run(`watch:${battleId}`, async () => {
+      const res = await ask('battle:watch', { battleId });
+      if (!res.ok) throw new Error(res.error);
+      setWatching({ battle: res.battle, result: null });
+      setView('battles');
+    });
+  const stopWatching = () => {
+    socketRef.current?.emit('battle:unwatch', {});
+    setWatching(null);
+  };
 
   const closeResult = () => {
     if (result) markSeen(result.battleId);
@@ -857,15 +981,17 @@ function Room({ code }) {
       onSend={sendChat}
       title={battleRoom ? 'Chat' : `# ${room?.name ?? 'chat'}`}
       placeholder={`Message ${battleRoom ? 'your opponent' : room?.name ?? 'the room'}`}
+      hasOlder={hasOlder}
+      onLoadOlder={loadOlder}
     />
   );
   const members_ = (
-    <MemberList members={members} me={me} battleRoom={battleRoom} challenges={challenges} inLiveBattle={inBattle} busy={busy} onChallenge={sendChallenge} onViewMap={battleRoom ? null : viewMap} />
+    <MemberList members={members} me={me} onViewMap={battleRoom ? null : viewMap} onCollapse={() => updateLayout({ membersHidden: true })} />
   );
 
   return (
     <div className="mx-auto max-w-[1600px]">
-      <BattleCountdown count={countdown} />
+      <BattleCountdown count={countdown} me={user?.name} opponent={opponentPlayer?.name} problem={myBattle?.problem} />
 
       <BattleSettingsModal
         open={settingsModalOpen && Boolean(myBattle) && myBattle.mode === 'duel'}
@@ -875,6 +1001,8 @@ function Room({ code }) {
         onConfirm={confirmSettings}
         confirmed={myBattle?.players.find((p) => p.userId === me)?.settingsConfirmed}
         problemTitle={myBattle?.problem?.title}
+        players={myBattle?.players ?? []}
+        me={me}
       />
 
       <Modal open={warningModal.open} onClose={() => setWarningModal((w) => ({ ...w, open: false }))} title={warningModal.title}>
@@ -963,6 +1091,8 @@ function Room({ code }) {
         <BattleView
           roomCode={code}
           timerText={timerText}
+          timeLeft={timeLeft}
+          unreadChat={unreadChat}
           user={user}
           opponentPlayer={opponentPlayer}
           myStatus={myBattle.players.find((p) => p.userId === me)?.status ?? 'Coding'}
@@ -1006,7 +1136,10 @@ function Room({ code }) {
           theme={theme}
           roomChatEnabled={roomChatEnabled}
           battleChatOpen={battleChatOpen}
-          onToggleBattleChat={() => setBattleChatOpen((o) => !o)}
+          onToggleBattleChat={() => {
+            setBattleChatOpen((o) => !o);
+            setUnreadChat(0);
+          }}
           chatMessages={messages}
           chatDraft={chatDraft}
           onChatDraftChange={setChatDraft}
@@ -1031,6 +1164,7 @@ function Room({ code }) {
             onPickProblem={() => setProblemForm({ title: room?.currentProblem?.title ?? '', link: room?.currentProblem?.link ?? '' })}
             onLeave={() => setConfirm('leave')}
             onDelete={() => setConfirm('delete')}
+            onShowMembers={layout.membersHidden ? () => updateLayout({ membersHidden: false }) : null}
           />
 
           {/* Phones: one section at a time */}
@@ -1050,12 +1184,46 @@ function Room({ code }) {
             ))}
           </div>
 
-          <div className="grid gap-3 lg:h-[calc(100vh-13rem)] lg:min-h-[34rem] lg:grid-cols-[13rem_minmax(0,1fr)_15rem]">
+          {/* Side panels can be collapsed on wide screens; the choice is remembered on this device */}
+          <div
+            className={`grid gap-3 lg:h-[calc(100vh-13rem)] lg:min-h-[34rem] ${
+              layout.navCollapsed
+                ? layout.membersHidden
+                  ? 'lg:grid-cols-[3.5rem_minmax(0,1fr)]'
+                  : 'lg:grid-cols-[3.5rem_minmax(0,1fr)_15rem]'
+                : layout.membersHidden
+                  ? 'lg:grid-cols-[13rem_minmax(0,1fr)]'
+                  : 'lg:grid-cols-[13rem_minmax(0,1fr)_15rem]'
+            }`}
+          >
             <div className="hidden min-h-0 lg:block">
-              <RoomNav views={views} view={view === 'members' ? 'chat' : view} onView={setView} activity={activity} {...voiceProps} />
+              <RoomNav
+                views={views}
+                view={view === 'members' ? 'chat' : view}
+                onView={setView}
+                activity={activity}
+                collapsed={layout.navCollapsed}
+                onToggleCollapsed={() => updateLayout({ navCollapsed: !layout.navCollapsed })}
+                {...voiceProps}
+              />
             </div>
 
             <div className="flex min-h-0 flex-col gap-3">
+              {/* A quiz opening anywhere in the room reaches you whichever view you're in */}
+              {quizInfo && view !== 'quiz' && quizBannerHidden !== quizInfo.id && (
+                <div className="slide-down flex flex-wrap items-center gap-3 rounded-xl border border-violet/40 bg-violet/15 px-4 py-2.5 text-sm" role="status">
+                  <Brain className="size-5 shrink-0 text-violet-soft" aria-hidden />
+                  <p className="min-w-0 flex-1">
+                    <strong>{quizInfo.status === 'active' ? 'Quiz in progress' : 'Quiz starting'}:</strong> {quizInfo.topic} <span className="text-muted">· {quizInfo.count} questions</span>
+                  </p>
+                  <button type="button" className="btn-primary px-3 py-1 text-xs" onClick={() => setView('quiz')}>
+                    Join now
+                  </button>
+                  <button type="button" className="rounded-md p-1 text-muted hover:bg-panel-2 hover:text-ink" onClick={() => setQuizBannerHidden(quizInfo.id)} aria-label="Hide the quiz banner">
+                    <X className="size-4" />
+                  </button>
+                </div>
+              )}
               <ChallengeBanners challenges={challenges} me={me} busy={busy} onAccept={acceptChallenge} onDecline={declineChallenge} onCancel={cancelChallenge} />
               {lobbyBattle && view !== 'battles' && (
                 <LobbyBar battle={lobbyBattle} me={me} busy={busy} connected={connected} onToggleReady={toggleReady} onOpen={() => setView('battles')} />
@@ -1073,7 +1241,8 @@ function Room({ code }) {
                     {members_}
                   </div>
                 )}
-                {view === 'battles' && (
+                {view === 'battles' && watching && <SpectateView watching={watching} theme={theme} onStop={stopWatching} />}
+                {view === 'battles' && !watching && (
                   <BattlesView
                     battleRoom={battleRoom}
                     members={members}
@@ -1091,17 +1260,18 @@ function Room({ code }) {
                     onOpenSettings={() => setSettingsModalOpen(true)}
                     onLeaveBattle={() => setConfirm('exit')}
                     onShowResult={() => setResultOpen(true)}
+                    onWatch={inBattle ? null : watch}
                   />
                 )}
                 {!battleRoom && (
                   <div className={view === 'quiz' ? '' : 'hidden'}>
-                    <QuizActivity socketRef={socketRef} connected={connected} roomId={roomId} user={user} members={members} onLiveChange={setQuizLive} />
+                    <QuizActivity socketRef={socketRef} connected={connected} roomId={roomId} user={user} members={members} onLiveChange={setQuizInfo} />
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="hidden min-h-0 lg:block">{members_}</div>
+            {!layout.membersHidden && <div className="hidden min-h-0 lg:block">{members_}</div>}
           </div>
         </div>
       )}
