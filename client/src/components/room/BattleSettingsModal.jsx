@@ -10,7 +10,7 @@ export function BattleSettingsModal({
   problemTitle,
 }) {
   return (
-    <Modal open={open} onClose={onClose} title="⚙️ BATTLE SETTINGS">
+    <Modal open={open} onClose={onClose} title="Battle settings">
       <div className="space-y-5 text-sm py-1">
         <div className="p-3 bg-panel-2 rounded-xl border border-line space-y-1">
           <p className="text-xs text-muted uppercase font-semibold">Problem</p>

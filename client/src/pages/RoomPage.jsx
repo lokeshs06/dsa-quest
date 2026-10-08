@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Copy, Crown, ExternalLink, LoaderCircle, LogOut, MessageCircle, Swords, Trash2 } from 'lucide-react';
+import { ArrowLeft, LoaderCircle, MessageCircle, Swords } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_URL, api, errorMessage, tokenStore } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -11,7 +11,11 @@ import { battleAudio } from '../lib/battleAudio.js';
 import { VoiceChatManager } from '../lib/voiceChat.js';
 import { SEAT, SEAT_REFUSAL } from '../lib/battleState.js';
 
-import { RoomLobby } from '../components/room/RoomLobby.jsx';
+import { ChatPanel } from '../components/room/ChatPanel.jsx';
+import { MemberList, RoomNav, VoiceControls } from '../components/room/RoomSidebar.jsx';
+import { roomViews } from '../lib/roomViews.js';
+import { BattlesView, ChallengeBanners, LobbyBar } from '../components/room/BattlesView.jsx';
+import { RoomHeader } from '../components/room/RoomHeader.jsx';
 import { QuizActivity } from '../components/room/QuizActivity.jsx';
 import { BattleSettingsModal } from '../components/room/BattleSettingsModal.jsx';
 import { BattleCountdown } from '../components/room/BattleCountdown.jsx';
@@ -30,6 +34,7 @@ const SOCKET_URL =
       : undefined);
 
 const LIVE = ['waiting', 'lobby', 'settings', 'countdown', 'active'];
+const CODE_STREAM_MS = 80;
 const MAX_CHAT = 200;
 const seenKey = (battleId) => `dsaq_result_seen_${battleId}`;
 const wasSeen = (battleId) => {
@@ -153,6 +158,9 @@ function Room({ code }) {
   const [mobileTab, setMobileTab] = useState('mine');
   const [battleChatOpen, setBattleChatOpen] = useState(true);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  // Which part of the room is shown: chat, battles or quiz (and members, on phones)
+  const [view, setView] = useState('chat');
+  const [quizLive, setQuizLive] = useState(false);
 
   // ---- results, exits, rematches
   const [result, setResult] = useState(null);
@@ -165,13 +173,15 @@ function Room({ code }) {
 
   // ---- chat, voice
   const [chatDraft, setChatDraft] = useState('');
-  const chatBottomRef = useRef(null);
   const voiceManagerRef = useRef(null);
   const [voiceStatus, setVoiceStatus] = useState({ inVoice: false, isMuted: false, isSpeaking: false, error: null });
   const socketRef = useRef(null);
   const myEditorRef = useRef(null);
   const oppEditorRef = useRef(null);
   const codeDebounceRef = useRef(null);
+  const codeSeqRef = useRef(0);
+  const lastSentRef = useRef(0);
+  const opponentSeqRef = useRef(0);
   const disconnectTimerRef = useRef(null);
   const myBattleRef = useRef(null);
   useEffect(() => {
@@ -244,6 +254,7 @@ function Room({ code }) {
   const applyLoad = useCallback(
     (data) => {
       setRoom(data.room);
+      if (data.room.kind === 'battle') setView((v) => (v === 'chat' ? 'battles' : v));
       if (data.room.kind === 'battle' && !data.room.isMember) {
         setSeat(data.seat);
         setPhase('outside');
@@ -333,7 +344,7 @@ function Room({ code }) {
         systemLine(`${name} left the room`);
         refreshRoom();
       });
-      socket.on('room:member_solved', (m) => systemLine(`🎉 ${m.name} cleared ${m.title} (+${m.xp} XP)`));
+      socket.on('room:member_solved', (m) => systemLine(`${m.name} cleared ${m.title} (+${m.xp} XP)`));
       socket.on('room:problem_changed', (p) => {
         setRoom((r) => (r ? { ...r, currentProblem: p } : r));
         systemLine(`${p.setBy} picked "${p.title}" for the group`);
@@ -400,15 +411,18 @@ function Room({ code }) {
         battleAudio.playCountdown(count);
       });
       socket.on('battle:start', ({ battleStartTime, settings }) => {
-        setCountdown('⚔️ GO!');
+        setCountdown('GO');
         battleAudio.playGo();
         setTimeout(() => setCountdown(null), 1000);
         setMyBattle((b) => (b ? { ...b, status: 'active', battleStartTime, settings: settings ?? b.settings } : b));
         setOpponentStatus('Coding');
         if (settings?.fullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().then(() => setIsBattleMode(true)).catch(() => {});
       });
-      socket.on('battle:opponent_code', ({ userId, code: theirs, cursorLine, cursorCh, language }) => {
+      socket.on('battle:opponent_code', ({ userId, seq, code: theirs, cursorLine, cursorCh, language }) => {
         if (userId === me) return;
+        // seq restarts at 1 when the opponent reloads; anything else older than what's shown is dropped
+        if (seq && seq <= opponentSeqRef.current && seq !== 1) return;
+        opponentSeqRef.current = seq || 0;
         setOpponentCode(theirs);
         if (language) setOpponentLanguage(language);
         setOpponentCursor({ line: cursorLine, ch: cursorCh });
@@ -520,9 +534,6 @@ function Room({ code }) {
     battleAudio.setEnabled(myBattle?.settings?.soundEffects !== false);
   }, [myBattle?.settings?.soundEffects]);
 
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages, battleChatOpen, arena]);
 
   // ---- anti-cheat while the battle runs (if the battle turned it on)
   useEffect(() => {
@@ -606,6 +617,7 @@ function Room({ code }) {
       const { data } = await api.post(`/rooms/${code}/challenge/accept`, { challengeId });
       setChallenges((list) => list.filter((c) => c.challengeId !== challengeId));
       applyMyBattle(data.battle, data.judgeInfo);
+      setView('battles');
       setSettingsModalOpen(true);
     });
   const declineChallenge = (challengeId) =>
@@ -642,20 +654,28 @@ function Room({ code }) {
     else setSettingsModalOpen(false);
   };
 
+  // Live code: sent while you type (at most every CODE_STREAM_MS, and once more when you stop), each update
+  // numbered so the opponent's screen never steps back to an older version
+  const sendCode = (value, language = myLanguage) => {
+    const pos = myEditorRef.current?.getPosition?.();
+    codeSeqRef.current += 1;
+    lastSentRef.current = Date.now();
+    socketRef.current?.emit('battle:code_update', { roomCode: code, seq: codeSeqRef.current, code: value, cursorLine: pos?.lineNumber || 1, cursorCh: pos?.column || 1, language });
+  };
   const onCodeChange = (value) => {
-    setMyCode(value ?? '');
+    const text = value ?? '';
+    setMyCode(text);
     clearTimeout(codeDebounceRef.current);
-    codeDebounceRef.current = setTimeout(() => {
-      const pos = myEditorRef.current?.getPosition?.();
-      socketRef.current?.emit('battle:code_update', { roomCode: code, code: value ?? '', cursorLine: pos?.lineNumber || 1, cursorCh: pos?.column || 1, language: myLanguage });
-    }, 250);
+    const wait = CODE_STREAM_MS - (Date.now() - lastSentRef.current);
+    if (wait <= 0) sendCode(text);
+    else codeDebounceRef.current = setTimeout(() => sendCode(text), wait);
   };
   const onLanguageChange = (lang) => {
     setMyLanguage(lang);
     const starter = judgeInfo?.starter?.[lang];
     if (starter) {
       setMyCode(starter);
-      socketRef.current?.emit('battle:code_update', { roomCode: code, code: starter, cursorLine: 1, cursorCh: 1, language: lang });
+      sendCode(starter, lang);
     }
   };
 
@@ -809,94 +829,40 @@ function Room({ code }) {
     );
   }
 
-  const header = (
-    <header className="panel mb-4 space-y-3 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Link to="/rooms" className="mb-1 inline-flex items-center gap-1 text-xs text-muted hover:text-ink">
-            <ArrowLeft className="size-3.5" /> Rooms
-          </Link>
-          <h1 className="flex min-w-0 items-center gap-2 text-xl font-bold">
-            {room?.kind === 'battle' ? <Swords className="size-5 shrink-0 text-progress" aria-hidden /> : <MessageCircle className="size-5 shrink-0 text-cyan" aria-hidden />}
-            <span className="truncate">{room?.name}</span>
-            {room?.isHost && <Crown className="size-4 shrink-0 text-progress" aria-label="You host this room" />}
-          </h1>
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-            <span className="flex items-center gap-1">
-              <span className={`size-2 rounded-full ${connected ? 'bg-solved' : 'bg-faint'}`} aria-hidden /> {connected ? `${onlineCount} online` : 'Connecting…'}
-            </span>
-            <span>
-              {members.length}/{room?.maxMembers} members
-            </span>
-            <button className="flex items-center gap-1 font-mono tracking-widest hover:text-ink" onClick={copyCode} aria-label={`Copy room code ${code}`}>
-              {code} <Copy className="size-3" aria-hidden />
-            </button>
-            {room?.kind === 'battle' && seat && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${SEAT[seat.state]?.tone ?? ''}`}>{SEAT[seat.state]?.label}</span>}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {inBattle && (
-            <button className="btn-ghost px-3 py-1.5 text-xs text-revision" onClick={() => setConfirm('exit')} disabled={Boolean(busy)}>
-              <LogOut className="size-3.5" /> Exit Battle
-            </button>
-          )}
-          {room?.isHost && room?.kind !== 'battle' && (
-            <button className="btn-ghost px-3 py-1.5 text-xs text-revision" onClick={() => setConfirm('delete')} disabled={Boolean(busy)}>
-              <Trash2 className="size-3.5" /> Delete
-            </button>
-          )}
-          <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => setConfirm('leave')} disabled={Boolean(busy)}>
-            Leave room
-          </button>
-        </div>
-      </div>
-
-      {room?.kind !== 'battle' && (
-        <div className="rounded-xl border border-line bg-abyss/50 p-3 text-sm">
-          {problemForm ? (
-            <form onSubmit={shareProblem} className="flex flex-col gap-2 sm:flex-row">
-              <input className="field" placeholder="Problem title" value={problemForm.title} onChange={(e) => setProblemForm((f) => ({ ...f, title: e.target.value }))} maxLength={200} aria-label="Problem title" autoFocus />
-              <input className="field" type="url" placeholder="Link (optional)" value={problemForm.link} onChange={(e) => setProblemForm((f) => ({ ...f, link: e.target.value }))} aria-label="Problem link" />
-              <div className="flex gap-2">
-                <button className="btn-primary shrink-0" disabled={!problemForm.title.trim()}>
-                  Share
-                </button>
-                <button type="button" className="btn-ghost shrink-0" onClick={() => setProblemForm(null)}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="min-w-0 text-muted">
-                {room?.currentProblem?.title ? (
-                  <>
-                    Working on{' '}
-                    {room.currentProblem.link ? (
-                      <a href={room.currentProblem.link} target="_blank" rel="noreferrer" className="font-semibold text-cyan hover:underline">
-                        {room.currentProblem.title} <ExternalLink className="inline size-3" aria-hidden />
-                      </a>
-                    ) : (
-                      <strong className="text-ink">{room.currentProblem.title}</strong>
-                    )}
-                    {room.currentProblem.setBy && <span className="text-faint"> · picked by {room.currentProblem.setBy}</span>}
-                  </>
-                ) : (
-                  'No shared problem yet. Pick one for the group.'
-                )}
-              </p>
-              <button className="text-xs font-semibold text-cyan hover:underline" onClick={() => setProblemForm({ title: '', link: '' })} disabled={!connected}>
-                {room?.currentProblem?.title ? 'Change' : 'Pick a problem'}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </header>
+  const battleRoom = room?.kind === 'battle';
+  const lobbyBattle = inBattle && ['waiting', 'lobby', 'settings'].includes(myBattle.status) ? myBattle : null;
+  const views = roomViews({ battleRoom, liveBattles: battles.length, quizLive });
+  const activity = battles.slice(0, 5).map((b) => ({ id: b.battleId, title: b.players.map((p) => p.name).join(' vs '), detail: `${b.problem?.title ?? 'Battle'} · ${b.status === 'active' ? 'in progress' : 'getting ready'}` }));
+  const joinVoice = async () => {
+    const res = await voiceManagerRef.current?.joinVoice();
+    if (res && !res.success) toast.error(res.error || 'Couldn’t use the microphone');
+  };
+  const voiceProps = {
+    voiceEnabled,
+    voiceStatus,
+    connected,
+    onJoinVoice: joinVoice,
+    onToggleMute: () => voiceManagerRef.current?.toggleMute(),
+    onLeaveVoice: () => voiceManagerRef.current?.leaveVoice(),
+  };
+  const chat = (
+    <ChatPanel
+      user={user}
+      connected={connected}
+      messages={messages}
+      draft={chatDraft}
+      onDraftChange={setChatDraft}
+      onSend={sendChat}
+      title={battleRoom ? 'Chat' : `# ${room?.name ?? 'chat'}`}
+      placeholder={`Message ${battleRoom ? 'your opponent' : room?.name ?? 'the room'}`}
+    />
+  );
+  const members_ = (
+    <MemberList members={members} me={me} battleRoom={battleRoom} challenges={challenges} inLiveBattle={inBattle} busy={busy} onChallenge={sendChallenge} onViewMap={battleRoom ? null : viewMap} />
   );
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="mx-auto max-w-[1600px]">
       <BattleCountdown count={countdown} />
 
       <BattleSettingsModal
@@ -912,7 +878,7 @@ function Room({ code }) {
       <Modal open={warningModal.open} onClose={() => setWarningModal((w) => ({ ...w, open: false }))} title={warningModal.title}>
         <div className="space-y-4 text-sm">
           <p className="leading-relaxed text-muted">{warningModal.message}</p>
-          <button onClick={() => setWarningModal((w) => ({ ...w, open: false }))} className="btn-primary w-full py-2 text-xs">
+          <button onClick={() => setWarningModal((w) => ({ ...w, open: false }))} className="btn-primary w-full">
             Back to the battle
           </button>
         </div>
@@ -937,7 +903,7 @@ function Room({ code }) {
           {confirm === 'exit'
             ? arena
               ? 'Are you sure you want to leave the battle? It ends now and your opponent wins.'
-              : room?.kind === 'battle'
+              : battleRoom
                 ? 'Are you sure? You give up your seat and leave this battle room.'
                 : 'Are you sure? The battle is called off and you both go back to the room.'
             : confirm === 'delete'
@@ -955,6 +921,29 @@ function Room({ code }) {
             {confirm === 'exit' ? (busy === 'exit' ? 'Leaving battle…' : 'Leave battle') : confirm === 'delete' ? 'Delete room' : 'Leave room'}
           </button>
         </div>
+      </Modal>
+
+      <Modal open={Boolean(problemForm)} onClose={() => setProblemForm(null)} title="Pick a problem for the group">
+        {problemForm && (
+          <form onSubmit={shareProblem} className="space-y-3">
+            <label className="block">
+              <span className="label">Problem title</span>
+              <input className="field" value={problemForm.title} onChange={(e) => setProblemForm((f) => ({ ...f, title: e.target.value }))} maxLength={200} autoFocus required />
+            </label>
+            <label className="block">
+              <span className="label">Link (optional)</span>
+              <input className="field" type="url" value={problemForm.link} onChange={(e) => setProblemForm((f) => ({ ...f, link: e.target.value }))} placeholder="https://leetcode.com/problems/…" />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-ghost" onClick={() => setProblemForm(null)}>
+                Cancel
+              </button>
+              <button className="btn-primary" disabled={!problemForm.title.trim() || !connected}>
+                Share with the room
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <Modal open={Boolean(mapOf)} onClose={() => setMapOf(null)} title={mapOf ? `${mapOf.name}'s quest map` : ''} wide>
@@ -980,12 +969,9 @@ function Room({ code }) {
           disconnectCountdown={disconnectCountdown}
           voiceEnabled={voiceEnabled}
           voiceStatus={voiceStatus}
-          onToggleMute={() => voiceManagerRef.current?.toggleMute()}
-          onLeaveVoice={() => voiceManagerRef.current?.leaveVoice()}
-          onJoinVoice={async () => {
-            const res = await voiceManagerRef.current?.joinVoice();
-            if (res && !res.success) toast.error(res.error || 'Couldn’t use the microphone');
-          }}
+          onToggleMute={voiceProps.onToggleMute}
+          onLeaveVoice={voiceProps.onLeaveVoice}
+          onJoinVoice={joinVoice}
           warnings={warnings}
           isBattleMode={isBattleMode}
           onToggleFullscreen={() =>
@@ -1023,52 +1009,99 @@ function Room({ code }) {
           chatDraft={chatDraft}
           onChatDraftChange={setChatDraft}
           onSendChat={sendChat}
-          chatBottomRef={chatBottomRef}
           connected={connected}
           onExit={() => setConfirm('exit')}
           exiting={busy === 'exit'}
         />
       ) : (
-        <>
-          {header}
-          <div className="space-y-4">
-            {room?.kind !== 'battle' && !inBattle && <QuizActivity socketRef={socketRef} connected={connected} roomId={roomId} user={user} members={members} />}
-            <RoomLobby
-              room={room}
-              members={members}
-              battles={battles}
-              myBattle={myBattle}
-              seat={seat}
-              challenges={challenges}
-              user={user}
-              connected={connected}
-              busy={busy}
-              onSendChallenge={sendChallenge}
-              onAcceptChallenge={acceptChallenge}
-              onDeclineChallenge={declineChallenge}
-              onCancelChallenge={cancelChallenge}
-              onToggleReady={toggleReady}
-              onOpenSettings={() => setSettingsModalOpen(true)}
-              onLeaveBattle={() => setConfirm('exit')}
-              onStartDemoBattle={() => startPractice('demo')}
-              onStartSoloBattle={() => startPractice('solo')}
-              onViewMap={room?.kind === 'battle' ? null : viewMap}
-              voiceEnabled={voiceEnabled}
-              voiceStatus={voiceStatus}
-              onJoinVoice={async () => {
-                const res = await voiceManagerRef.current?.joinVoice();
-                if (res && !res.success) toast.error(res.error || 'Couldn’t use the microphone');
-              }}
-              onToggleMute={() => voiceManagerRef.current?.toggleMute()}
-              onLeaveVoice={() => voiceManagerRef.current?.leaveVoice()}
-              chatMessages={messages}
-              chatDraft={chatDraft}
-              onChatDraftChange={setChatDraft}
-              onSendChat={sendChat}
-              chatBottomRef={chatBottomRef}
-            />
+        <div className="space-y-3">
+          <RoomHeader
+            room={room}
+            code={code}
+            connected={connected}
+            onlineCount={onlineCount}
+            memberCount={members.length}
+            seat={seat}
+            inBattle={inBattle}
+            busy={busy}
+            onCopyCode={copyCode}
+            onExitBattle={() => setConfirm('exit')}
+            onPickProblem={() => setProblemForm({ title: room?.currentProblem?.title ?? '', link: room?.currentProblem?.link ?? '' })}
+            onLeave={() => setConfirm('leave')}
+            onDelete={() => setConfirm('delete')}
+          />
+
+          {/* Phones: one section at a time */}
+          <div className="flex gap-1 rounded-xl border border-line bg-panel p-1 lg:hidden" role="tablist" aria-label="Room sections">
+            {[...views, { id: 'members', label: 'Members' }].map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                role="tab"
+                aria-selected={view === v.id}
+                onClick={() => setView(v.id)}
+                className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${view === v.id ? 'bg-panel-2 text-ink' : 'text-muted'}`}
+              >
+                {v.label}
+                {v.badge ? <span className="ml-1 text-violet-soft">•</span> : null}
+              </button>
+            ))}
           </div>
-        </>
+
+          <div className="grid gap-3 lg:h-[calc(100vh-13rem)] lg:min-h-[34rem] lg:grid-cols-[13rem_minmax(0,1fr)_15rem]">
+            <div className="hidden min-h-0 lg:block">
+              <RoomNav views={views} view={view === 'members' ? 'chat' : view} onView={setView} activity={activity} {...voiceProps} />
+            </div>
+
+            <div className="flex min-h-0 flex-col gap-3">
+              <ChallengeBanners challenges={challenges} me={me} busy={busy} onAccept={acceptChallenge} onDecline={declineChallenge} onCancel={cancelChallenge} />
+              {lobbyBattle && view !== 'battles' && (
+                <LobbyBar battle={lobbyBattle} me={me} busy={busy} connected={connected} onToggleReady={toggleReady} onOpen={() => setView('battles')} />
+              )}
+
+              <div className={`min-h-0 flex-1 ${view === 'chat' || view === 'members' ? '' : 'overflow-y-auto'}`}>
+                {(view === 'chat' || view === 'members') && <div className={`h-[65vh] lg:h-full ${view === 'members' ? 'hidden lg:block' : ''}`}>{chat}</div>}
+                {view === 'members' && (
+                  <div className="space-y-3 lg:hidden">
+                    {voiceEnabled && (
+                      <div className="rounded-2xl border border-line bg-panel p-3">
+                        <VoiceControls {...voiceProps} />
+                      </div>
+                    )}
+                    {members_}
+                  </div>
+                )}
+                {view === 'battles' && (
+                  <BattlesView
+                    battleRoom={battleRoom}
+                    members={members}
+                    me={me}
+                    battles={battles}
+                    myBattle={myBattle}
+                    seat={seat}
+                    challenges={challenges}
+                    busy={busy}
+                    connected={connected}
+                    result={result}
+                    onChallenge={sendChallenge}
+                    onPractice={startPractice}
+                    onToggleReady={toggleReady}
+                    onOpenSettings={() => setSettingsModalOpen(true)}
+                    onLeaveBattle={() => setConfirm('exit')}
+                    onShowResult={() => setResultOpen(true)}
+                  />
+                )}
+                {!battleRoom && (
+                  <div className={view === 'quiz' ? '' : 'hidden'}>
+                    <QuizActivity socketRef={socketRef} connected={connected} roomId={roomId} user={user} members={members} onLiveChange={setQuizLive} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="hidden min-h-0 lg:block">{members_}</div>
+          </div>
+        </div>
       )}
     </div>
   );

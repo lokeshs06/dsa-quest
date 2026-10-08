@@ -167,7 +167,7 @@ export function Layout() {
         </div>
       </header>
 
-      <main className={`mx-auto px-4 sm:px-6 ${pathname.startsWith('/code/') ? 'max-w-[1700px] pb-6 pt-4' : 'max-w-6xl pb-16 pt-8'}`}>
+      <main className={`mx-auto px-4 sm:px-6 ${pathname.startsWith('/code/') || pathname.startsWith('/room/') ? 'max-w-[1700px] pb-6 pt-4' : 'max-w-6xl pb-16 pt-8'}`}>
         <RouteErrorBoundary key={pathname}>
           <Outlet />
         </RouteErrorBoundary>

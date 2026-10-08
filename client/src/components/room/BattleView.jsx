@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { DifficultyChip } from '../ui.jsx';
 import { LoadingScreen } from '../Feedback.jsx';
-import { RoomChat } from './RoomLobby.jsx';
+import { ChatPanel } from './ChatPanel.jsx';
 
 const Monaco = lazy(() => import('@monaco-editor/react'));
 
@@ -83,7 +83,6 @@ export function BattleView({
   chatDraft,
   onChatDraftChange,
   onSendChat,
-  chatBottomRef,
   connected,
   onExit,
   exiting,
@@ -108,7 +107,7 @@ export function BattleView({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="chip border-amber-500/40 bg-amber-500/10 text-amber-400 text-xs font-bold uppercase inline-flex items-center gap-1">
-              <Swords className="size-3" /> CHALLENGE ROOM
+              <Swords className="size-3" /> 1v1 Battle
             </span>
             <span className="text-xs font-semibold text-ink font-mono bg-panel-2 px-2 py-0.5 rounded">
               #{roomCode}
@@ -247,7 +246,7 @@ export function BattleView({
               mobileTab === 'mine' ? 'bg-panel-2 text-ink shadow' : 'text-muted'
             }`}
           >
-            👤 My Code
+            My code
           </button>
           <button
             onClick={() => onMobileTabChange('opponent')}
@@ -255,7 +254,7 @@ export function BattleView({
               mobileTab === 'opponent' ? 'bg-panel-2 text-ink shadow' : 'text-muted'
             }`}
           >
-            👤 Opponent (Live)
+            Opponent (live)
           </button>
         </div>
       )}
@@ -425,7 +424,7 @@ export function BattleView({
                   OPPONENT ({opponentPlayer?.name || 'Player 2'})
                 </span>
                 <span className="chip text-[11px] border-line py-0.5 px-2 text-muted">
-                  {opponentDisconnected ? '⚠️ Disconnected' : opponentStatus}
+                  {opponentDisconnected ? 'Disconnected' : opponentStatus}
                 </span>
               </div>
 
@@ -488,7 +487,7 @@ export function BattleView({
       {/* The room chat, floating over the arena (a battle can turn it off for its players) */}
       {roomChatEnabled && battleChatOpen && (
         <div className="fixed bottom-4 right-4 z-40 w-[min(20rem,calc(100vw-2rem))] shadow-2xl">
-          <RoomChat user={user} connected={connected} messages={chatMessages} draft={chatDraft} onDraftChange={onChatDraftChange} onSend={onSendChat} bottomRef={chatBottomRef} height="h-72" onClose={onToggleBattleChat} />
+          <ChatPanel compact user={user} connected={connected} messages={chatMessages} draft={chatDraft} onDraftChange={onChatDraftChange} onSend={onSendChat} title="Room chat" onClose={onToggleBattleChat} />
         </div>
       )}
     </div>

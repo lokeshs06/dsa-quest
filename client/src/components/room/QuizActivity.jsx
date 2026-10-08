@@ -25,8 +25,13 @@ function useNow(active) {
   return now;
 }
 
-export function QuizActivity({ socketRef, connected, roomId, user, members }) {
+export function QuizActivity({ socketRef, connected, roomId, user, members, onLiveChange }) {
   const [quiz, setQuiz] = useState(null);
+  // Lets the room show a "Live" badge on Quiz while one is open or running
+  const live = Boolean(quiz && (quiz.status === 'lobby' || quiz.status === 'active'));
+  useEffect(() => {
+    onLiveChange?.(live);
+  }, [live, onLiveChange]);
   // Your answers, by question index, for one quiz only: a new quiz starts with none
   const [answered, setAnswered] = useState({ quizId: null, byQ: {} });
   const [creating, setCreating] = useState(false);

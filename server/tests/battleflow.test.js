@@ -281,7 +281,7 @@ describe('a chat room with several 1v1 battles at once', () => {
     expect(msg).toMatchObject({ name: 'Fay', type: 'text' });
     expect(msg.id).toMatch(/^[a-f0-9]{24}$/);
     const history = (await api.byCode(U.Ben, room.code)).body.messages;
-    expect(history.map((m) => m.message)).toEqual(expect.arrayContaining(['gg everyone', expect.stringMatching(/🏆 Ana beat Ben/)]));
+    expect(history.map((m) => m.message)).toEqual(expect.arrayContaining(['gg everyone', expect.stringMatching(/^Ana beat Ben on /)]));
   });
 
   test('a battle can turn chat off for its two players while it runs', async () => {

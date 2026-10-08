@@ -53,6 +53,41 @@ function clearTimers(battleId) {
   for (const key of Array.from(timers.keys())) if (key.split(':')[1] === String(battleId)) clearTimer(key);
 }
 
+// ---------------------------------------------------------------- live code relay
+// Code typed in a running battle is relayed from memory, with no database round trip in the way, and saved to
+// the database in the background at most every CODE_SAVE_MS. Running battles are remembered here; after a
+// restart the first update looks the battle up once.
+const CODE_SAVE_MS = 1500;
+const running = new Map(); // battleId -> { showOpponentCode }
+const pendingCode = new Map(); // `${battleId}:${userId}` -> latest { code, cursorLine, cursorCh, language }
+
+export const rememberRunning = (battle) => running.set(String(battle._id), { showOpponentCode: battle.settings?.showOpponentCode !== false });
+const forgetRunning = (battleId) => running.delete(String(battleId));
+
+export async function runningBattle(battleId) {
+  const known = running.get(String(battleId));
+  if (known) return known;
+  const battle = await Battle.findOne({ _id: battleId, status: 'active' }).select('settings').lean();
+  if (!battle) return null;
+  rememberRunning(battle);
+  return running.get(String(battleId));
+}
+
+export function saveCodeSoon(battleId, userId, update) {
+  const key = `${battleId}:${userId}`;
+  const first = !pendingCode.has(key);
+  pendingCode.set(key, update);
+  if (!first) return;
+  setTimeout(() => {
+    const latest = pendingCode.get(key);
+    pendingCode.delete(key);
+    Battle.updateOne(
+      { _id: battleId, status: 'active', 'players.userId': userId },
+      { $set: { 'players.$.code': latest.code, 'players.$.cursorLine': latest.cursorLine, 'players.$.cursorCh': latest.cursorCh, 'players.$.language': latest.language } }
+    ).catch(log);
+  }, CODE_SAVE_MS);
+}
+
 // ---------------------------------------------------------------- problems and players
 export const problemData = (order) => arrayProblems.find((p) => p.order === Number(order)) || arrayProblems[0];
 export const problemInfo = (battle) => judgeInfo(problemData(battle?.problem?.order));
@@ -202,10 +237,10 @@ async function leaveChannel(battleId, userId) {
 function resultLine(b) {
   const title = b.problem?.title ?? 'the problem';
   const [p1, p2] = b.players;
-  if (b.mode === 'solo') return b.winner ? `⚡ ${p1?.name} solved ${title} in a solo battle.` : `⏱️ ${p1?.name}'s solo battle on ${title} ended.`;
-  if (!b.winner) return `🤝 ${p1?.name} and ${p2?.name ?? 'their opponent'} drew on ${title}.`;
+  if (b.mode === 'solo') return b.winner ? `${p1?.name} solved ${title} in a solo battle.` : `${p1?.name}'s solo battle on ${title} ended.`;
+  if (!b.winner) return `${p1?.name} and ${p2?.name ?? 'their opponent'} drew on ${title}.`;
   const why = { opponent_left: ` (${b.loserName} left the battle)`, opponent_disconnected_timeout: ` (${b.loserName} disconnected)`, time_expired: ' when time ran out' }[b.endReason] ?? '';
-  return `🏆 ${b.winnerName} beat ${b.loserName} on ${title}${why}.`;
+  return `${b.winnerName} beat ${b.loserName} on ${title}${why}.`;
 }
 
 // ---------------------------------------------------------------- lookups (always through sweep)
@@ -296,6 +331,7 @@ export async function finishBattle(battleId, { winnerId = null, reason, set = {}
   );
   if (!done) return null; // somebody else ended it first
   clearTimers(battleId);
+  forgetRunning(battleId);
   emitToBattle(done, 'battle:game_over', battleResult(done));
   const roomId = await announce(done);
   systemMessage(roomId, resultLine(done));
@@ -477,6 +513,7 @@ export async function beginBattle(battleId) {
     { returnDocument: 'after' }
   );
   if (!started) return null;
+  rememberRunning(started);
   emitToBattle(started, 'battle:start', {
     battleId: String(started._id),
     battleStartTime: now.toISOString(),

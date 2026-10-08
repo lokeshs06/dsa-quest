@@ -13,6 +13,8 @@ import {
   exitBattle,
   liveBattleFor,
   playerDisconnected,
+  runningBattle,
+  saveCodeSoon,
   playerReconnected,
   problemInfo,
   requestRematch,
@@ -122,18 +124,23 @@ export function setupBattleSocket(io, socket) {
     await startCountdown(battle._id);
   });
 
-  // 4. Live code: stored for the player, shown to the opponent only if the battle allows it
+  // 4. Live code: relayed straight away (only players sit in a battle's channel, so being in it is the check),
+  //    saved in the background, and numbered so the opponent never shows an older version after a newer one
   on('battle:code_update', async (p) => {
     if (typeof p.code !== 'string' || p.code.length > MAX_CODE) return;
-    const battle = await liveBattleFor(userId, codeOf(p));
-    if (!battle || battle.status !== 'active') return;
-    const language = LANGUAGES.includes(p.language) ? p.language : 'python';
-    const cursorLine = Number(p.cursorLine) || 1;
-    const cursorCh = Number(p.cursorCh) || 1;
-    if (battle.settings?.showOpponentCode !== false) {
-      socket.to(channel(battle._id)).emit('battle:opponent_code', { userId, code: p.code, cursorLine, cursorCh, language });
-    }
-    await Battle.updateOne({ _id: battle._id, 'players.userId': userId }, { $set: { 'players.$.code': p.code, 'players.$.cursorLine': cursorLine, 'players.$.cursorCh': cursorCh, 'players.$.language': language } });
+    const room = [...socket.rooms].find((r) => r.startsWith('battle:'));
+    if (!room) return;
+    const battleId = room.slice('battle:'.length);
+    const battle = await runningBattle(battleId);
+    if (!battle) return;
+    const update = {
+      code: p.code,
+      cursorLine: Number(p.cursorLine) || 1,
+      cursorCh: Number(p.cursorCh) || 1,
+      language: LANGUAGES.includes(p.language) ? p.language : 'python',
+    };
+    if (battle.showOpponentCode) socket.to(room).emit('battle:opponent_code', { userId, seq: Number(p.seq) || 0, ...update });
+    saveCodeSoon(battleId, userId, update);
   });
 
   on('battle:status_update', async (p) => {
