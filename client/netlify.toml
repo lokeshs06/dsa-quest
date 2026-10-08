@@ -1,0 +1,15 @@
+# Netlify settings for the client (set the site's Base directory to "client").
+# The API is hosted separately: set VITE_API_URL=https://<your-api>.onrender.com/api in Netlify's environment variables.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# A single-page app: every route (/login, /rooms, /room/ABC123 ...) is served by index.html,
+# so reloading or opening a link directly works. Real files (scripts, icons, the service worker) still win.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
