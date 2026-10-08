@@ -38,6 +38,7 @@ Built with the **MERN stack**: MongoDB, Express, React and Node.js.
   - **Chat rooms** for groups (up to 20): real-time chat with history, who's online, a shared problem, quizzes, a live ping when a room-mate clears a quest, and read-only room-mate quest maps. Any two free members can **challenge** each other to a 1v1 battle, and several pairs can battle at once while everyone else stays in the room.
   - **Battle rooms** for exactly two players ("Challenge a friend", or *New 1v1 battle room*). The room shows *Waiting for opponent*, *Full*, *In progress* or *Completed*; a third person gets a clear "already full" message.
   - **1v1 battles**: both players ready up, a server-run countdown, the same problem for both, Run and Submit against hidden tests, and the first all-passing submission wins (decided atomically on the server). **Exit Battle** asks first; leaving a running battle hands the win to your opponent, who is told at once. A closed tab gets a grace period to reconnect (a second tab doesn't count as leaving). The result popup covers wins, losses, draws and walk-overs with the recorded numbers only.
+  - **Quizzes, Kahoot style**: everyone gets the same question at the same moment on coloured answer tiles, answers lock in on one tap, and the right answer, how many picked each option and the scoreboard come after every question, ending on a podium. Up to 1000 points for a fast right answer, streak bonuses, double-points questions, teams, and late joiners. Host one of the ready-made DSA quizzes in two clicks, or build your own in a visual editor (tick the right answer), generate questions with AI, or paste them in a simple text format; saved quizzes can be hosted again in any room.
   Built on Socket.IO; the server is the source of truth for every seat, state and result.
 - **🏆 Leaderboard.** Strictly opt-in. Rank by XP, current streak or this week's solves. Only your name, level, XP, streak and solve counts are ever shown.
 - **📦 Pack marketplace.** Publish a topic (or hand-picked problems) as a pack, list it publicly or share it only through a link, and add other people's packs to your own map. Only the problems and your how-to-solve notes are shared, never your progress, notes or code. Packs that get reported by enough different people are hidden.
@@ -218,6 +219,11 @@ All routes are under `/api`. Every route except register, login, health and unsu
 | PATCH / POST | `/battles/:code/settings`, `/battles/:code/confirm-settings` | Change or confirm settings before the start |
 | POST | `/battles/:code/run`, `/battles/:code/submit` | Run the visible cases / submit against all cases (only while the battle is active) |
 | GET | `/rooms/:id` | A room and every member's progress (members only) |
+| GET | `/quizzes` | The ready-made quizzes and the ones you saved |
+| GET | `/quizzes/templates/:id` | A ready-made quiz in full, to copy into the editor |
+| POST, GET, PUT, DELETE | `/quizzes`, `/quizzes/:id` | Save, open, change and delete your own quizzes (`title`, `questions`) |
+| POST | `/quizzes/generate` | AI-written questions for the editor to review (`topic`, `difficulty`, `count`) |
+| POST | `/quizzes/import` | Questions from pasted text (simple format or JSON), plus how many were skipped and why |
 | GET | `/rooms/:id/members/:userId/map` | A room-mate's quest map, read-only |
 | POST / DELETE | `/rooms/:id/leave`, `/rooms/:id` | Leave a room / delete it (host only) |
 | POST | `/sync/leetcode` | Pull recent accepted submissions from LeetCode (`username`, `importMissing`, `tzOffset`) |

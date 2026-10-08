@@ -156,15 +156,16 @@ function VerifyEmailBanner({ user }) {
   };
 
   return (
-    <div className="flex items-center justify-center gap-2 bg-violet/15 px-4 py-1.5 text-center text-xs text-ink" role="status">
-      <Mail className="size-3.5 shrink-0 text-violet-soft" aria-hidden />
-      <span>
-        Confirm your email <span className="font-semibold">{user.email}</span> so you can reset your password if you forget it.
-      </span>
-      <button type="button" onClick={resend} disabled={busy} className="font-semibold text-violet-soft hover:underline disabled:opacity-60">
-        {busy ? 'Sending…' : 'Resend email'}
-      </button>
-      <button type="button" onClick={hide} className="rounded p-0.5 text-muted hover:text-ink" aria-label="Hide this reminder">
+    <div className="flex items-start gap-2 bg-violet/15 px-4 py-1.5 text-xs text-ink sm:items-center sm:justify-center" role="status">
+      <Mail className="mt-0.5 size-3.5 shrink-0 text-violet-soft sm:mt-0" aria-hidden />
+      {/* Wraps on a phone: a long address must never push the page sideways */}
+      <p className="min-w-0 flex-1 sm:flex-initial sm:text-center">
+        Confirm your email <span className="break-all font-semibold">{user.email}</span> so you can reset your password if you forget it.{' '}
+        <button type="button" onClick={resend} disabled={busy} className="font-semibold whitespace-nowrap text-violet-soft hover:underline disabled:opacity-60">
+          {busy ? 'Sending…' : 'Resend email'}
+        </button>
+      </p>
+      <button type="button" onClick={hide} className="shrink-0 rounded p-0.5 text-muted hover:text-ink" aria-label="Hide this reminder">
         <X className="size-3.5" />
       </button>
     </div>

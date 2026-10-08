@@ -25,6 +25,9 @@ import {
   battleCreateSchema,
   battleProblemSchema,
   challengeSendSchema,
+  quizSetSchema,
+  quizGenerateSchema,
+  quizImportSchema,
   battleSettingsSchema,
   battleCodeSchema,
   solutionCreateSchema,
@@ -61,6 +64,7 @@ import { executeCode, submitSolution } from '../controllers/code.controller.js';
 import { listSolutions, createSolution, updateSolution, deleteSolution, listSubmissions, getSubmission, deleteSubmission } from '../controllers/solution.controller.js';
 import { syncLeetCode } from '../controllers/sync.controller.js';
 import { battleProblemList } from '../services/battle.service.js';
+import { listQuizzes, getTemplate, getQuiz, createQuiz, updateQuiz, deleteQuiz, generateQuiz, importQuiz } from '../controllers/quiz.controller.js';
 import { getFeatures, getSettings, updateSettings, sendTestDigest, unsubscribe } from '../controllers/settings.controller.js';
 import { createRoom, listRooms, myRooms, joinRoom, getRoom, memberMap, leaveRoom, deleteRoom } from '../controllers/room.controller.js';
 import {
@@ -229,6 +233,16 @@ router.get('/rooms/:code/challenge', requireAuth, getActiveChallenge);
 
 // Challenge Battles (1v1 coding arena)
 router.post('/battles', requireAuth, validate(battleCreateSchema), createBattle);
+// Quizzes: ready-made ones, the ones you saved, and help writing new ones (they are played in rooms, over the socket)
+router.get('/quizzes', requireAuth, listQuizzes);
+router.get('/quizzes/templates/:id', requireAuth, getTemplate);
+router.post('/quizzes/generate', requireAuth, aiLimiter, validate(quizGenerateSchema), generateQuiz);
+router.post('/quizzes/import', requireAuth, validate(quizImportSchema), importQuiz);
+router.post('/quizzes', requireAuth, validate(quizSetSchema), createQuiz);
+router.get('/quizzes/:id', requireAuth, getQuiz);
+router.put('/quizzes/:id', requireAuth, validate(quizSetSchema), updateQuiz);
+router.delete('/quizzes/:id', requireAuth, deleteQuiz);
+
 router.get('/battles/problems', requireAuth, (_req, res) => res.json({ problems: battleProblemList() }));
 router.get('/battles/:code', requireAuth, getBattle);
 router.get('/battles/:code/result', requireAuth, getBattleResult);

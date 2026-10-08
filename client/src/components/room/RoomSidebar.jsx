@@ -93,7 +93,7 @@ export function MemberList({ members, me, battleRoom, challenges, inLiveBattle, 
         type="button"
         onClick={() => onChallenge(m.id)}
         disabled={Boolean(busy)}
-        className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] font-semibold text-muted opacity-0 transition hover:border-violet/50 hover:text-ink focus:opacity-100 group-hover:opacity-100 disabled:opacity-50 max-lg:opacity-100"
+        className="inline-flex items-center gap-1 rounded-md border border-line bg-panel px-2 py-1 text-[11px] font-semibold text-muted transition hover:border-violet/50 hover:text-ink disabled:opacity-50"
         aria-label={`Challenge ${m.name}`}
       >
         {busy === `challenge:${m.id}` ? <LoaderCircle className="size-3 animate-spin" /> : <Swords className="size-3" />} {busy === `challenge:${m.id}` ? 'Sending' : 'Challenge'}
@@ -109,7 +109,7 @@ export function MemberList({ members, me, battleRoom, challenges, inLiveBattle, 
         </p>
         <ul className="space-y-0.5">
           {list.map((m) => (
-            <li key={m.id} className={`group flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-panel-2/50 ${!m.online && !m.isBattling ? 'opacity-60' : ''}`}>
+            <li key={m.id} className={`group relative flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-panel-2/50 ${!m.online && !m.isBattling ? 'opacity-60' : ''}`}>
               <span className="relative">
                 <Avatar name={m.name} />
                 <span className={`absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-panel ${m.isBattling ? 'bg-revision' : m.online ? 'bg-solved' : 'bg-faint'}`} role="img" aria-label={m.isBattling ? 'In a battle' : m.online ? 'Online' : 'Offline'} />
@@ -122,12 +122,15 @@ export function MemberList({ members, me, battleRoom, challenges, inLiveBattle, 
                 </p>
                 <p className="truncate text-[11px] text-faint">{m.isBattling ? `In a battle${m.battlingWith ? ` vs ${m.battlingWith}` : ''}` : `Level ${m.level || 1} · ${m.xp || 0} XP`}</p>
               </div>
-              {action(m)}
-              {onViewMap && m.id !== me && (
-                <button type="button" onClick={() => onViewMap(m)} className="rounded-md p-1 text-faint opacity-0 hover:bg-panel-2 hover:text-ink focus:opacity-100 group-hover:opacity-100 max-lg:opacity-100" aria-label={`${m.name}'s quest map`} title="Quest map">
-                  <MapIcon className="size-3.5" />
-                </button>
-              )}
+              {/* On wide screens the actions float over the row on hover, so they never squeeze the name */}
+              <div className="flex shrink-0 items-center gap-1 lg:absolute lg:right-1.5 lg:top-1/2 lg:-translate-y-1/2 lg:rounded-md lg:bg-panel-2 lg:p-0.5 lg:opacity-0 lg:transition lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                {action(m)}
+                {onViewMap && m.id !== me && (
+                  <button type="button" onClick={() => onViewMap(m)} className="rounded-md p-1 text-faint hover:bg-panel hover:text-ink" aria-label={`${m.name}'s quest map`} title="Quest map">
+                    <MapIcon className="size-3.5" />
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>

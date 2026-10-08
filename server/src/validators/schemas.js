@@ -149,6 +149,20 @@ export const battleCodeSchema = z.object({
   code: code.refine((c) => c.trim().length > 0, 'Write some code first'),
 });
 
+// --- quizzes ------------------------------------------------------------------
+// Each question is checked in detail by the quiz service, which can say which one is wrong
+export const quizSetSchema = z.object({
+  title: z.string().trim().min(2, 'Give the quiz a title').max(100),
+  questions: z.array(z.unknown()).min(1, 'Add at least one question').max(50, 'A quiz can have up to 50 questions'),
+});
+export const quizGenerateSchema = z.object({
+  topic: z.string().trim().min(2, 'Pick a topic').max(100),
+  difficulty: z.enum(DIFFICULTIES).optional().default('Medium'),
+  count: z.coerce.number().int().min(3, 'Ask for at least 3 questions').max(30, 'Ask for up to 30 questions at a time').optional().default(10),
+  types: z.array(z.enum(['single', 'truefalse', 'multi'])).optional(),
+});
+export const quizImportSchema = z.object({ text: z.string().min(1, 'Paste some questions first').max(100_000, 'That is too much text') });
+
 // --- LeetCode sync -----------------------------------------------------------
 export const leetcodeSyncSchema = z.object({
   username: z.string().trim().min(1, 'Enter your LeetCode username').max(40).regex(/^[\w.-]+$/, 'That doesn’t look like a LeetCode username'),
