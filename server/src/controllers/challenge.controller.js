@@ -20,6 +20,7 @@ import {
   liveBattleFor,
   liveBattlesIn,
   newPlayer,
+  pickProblem,
   problemData,
   problemFields,
   problemInfo,
@@ -163,9 +164,9 @@ async function chatRoomFor(req) {
   return room;
 }
 
-// POST /api/rooms/:code/challenge { targetUserId }
+// POST /api/rooms/:code/challenge { targetUserId, problemOrder?, difficulty? } (no problem chosen: a random one)
 export const sendChallenge = asyncHandler(async (req, res) => {
-  const { targetUserId } = req.body ?? {};
+  const { targetUserId, problemOrder, difficulty } = req.body ?? {};
   if (!targetUserId || !mongoose.isValidObjectId(targetUserId)) throw new HttpError(400, 'Invalid target user');
   if (sameId(req.userId, targetUserId)) throw new HttpError(400, 'You cannot challenge yourself');
   const room = await chatRoomFor(req);
@@ -180,6 +181,7 @@ export const sendChallenge = asyncHandler(async (req, res) => {
   if (pending) throw new HttpError(400, 'A challenge is already pending for one of the players');
 
   const [challenger, challenged] = await Promise.all([User.findById(req.userId).select('name').lean(), User.findById(targetUserId).select('name').lean()]);
+  const problem = pickProblem({ problemOrder, difficulty });
   const challenge = await Challenge.create({
     challengeId: 'ch_' + crypto.randomBytes(6).toString('hex'),
     roomId: room._id,
@@ -188,6 +190,7 @@ export const sendChallenge = asyncHandler(async (req, res) => {
     challengerName: challenger?.name || 'Challenger',
     challengedId: targetUserId,
     challengedName: challenged?.name || 'Opponent',
+    problem: { order: problem.order, title: problem.title, difficulty: problem.difficulty },
     status: 'pending',
     expiresAt: new Date(Date.now() + CHALLENGE_EXPIRE_MS),
   });
@@ -229,7 +232,7 @@ export const acceptChallenge = asyncHandler(async (req, res) => {
   const claimed = await Challenge.findOneAndUpdate({ _id: challenge._id, status: 'pending' }, { $set: { status: 'accepted' } }, { returnDocument: 'after' });
   if (!claimed) throw new HttpError(409, 'This challenge is no longer open.');
 
-  const problem = problemData(1);
+  const problem = problemData(claimed.problem?.order ?? 1);
   const info = judgeInfo(problem);
   const battle = await Battle.create({
     roomCode: room.code,
@@ -283,11 +286,12 @@ export const cancelChallenge = asyncHandler(async (req, res) => {
 
 // A practice battle for one person in a chat room: against the clock (solo) or a scripted bot (demo)
 async function practiceBattle(req, mode) {
+  const { problemOrder, difficulty } = req.body ?? {};
   const room = await chatRoomFor(req);
   await ensureNotBattling([req.userId]);
   const me = await User.findById(req.userId).select('name').lean();
   if (!me) throw new HttpError(404, 'User not found');
-  const problem = problemData(1);
+  const problem = pickProblem({ problemOrder, difficulty });
   const info = judgeInfo(problem);
   const players = [newPlayer(req.userId, me.name, info, { ready: true, settingsConfirmed: true, status: 'Ready' })];
   if (mode === 'demo') {
@@ -314,13 +318,13 @@ async function practiceBattle(req, mode) {
   return { battle: counting ?? battle, info };
 }
 
-// POST /api/rooms/:code/challenge/demo
+// POST /api/rooms/:code/challenge/demo { problemOrder?, difficulty? }
 export const startDemoChallenge = asyncHandler(async (req, res) => {
   const { battle, info } = await practiceBattle(req, 'demo');
   res.json({ battle: battleView(battle, req.userId), judgeInfo: info });
 });
 
-// POST /api/rooms/:code/challenge/solo
+// POST /api/rooms/:code/challenge/solo { problemOrder?, difficulty? }
 export const startSoloBattle = asyncHandler(async (req, res) => {
   const { battle, info } = await practiceBattle(req, 'solo');
   res.json({ battle: battleView(battle, req.userId), judgeInfo: info });

@@ -47,6 +47,12 @@ const challengeSchema = new mongoose.Schema(
       default: 'pending',
       index: true,
     },
+    // Picked when the challenge is sent, so both players see what they're agreeing to
+    problem: {
+      order: { type: Number, default: 1 },
+      title: { type: String, default: '' },
+      difficulty: { type: String, default: '' },
+    },
     battleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Battle',

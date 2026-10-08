@@ -20,6 +20,9 @@ const Leaderboard = page(() => import('./pages/Leaderboard.jsx'), 'Leaderboard')
 const Marketplace = page(() => import('./pages/Marketplace.jsx'), 'Marketplace');
 const Settings = page(() => import('./pages/Settings.jsx'), 'Settings');
 const RoomPage = page(() => import('./pages/RoomPage.jsx'), 'RoomPage');
+const ForgotPassword = page(() => import('./pages/AccountPages.jsx'), 'ForgotPassword');
+const ResetPassword = page(() => import('./pages/AccountPages.jsx'), 'ResetPassword');
+const VerifyEmail = page(() => import('./pages/AccountPages.jsx'), 'VerifyEmail');
 
 const lazyRoute = (Page, label) => (
   <Suspense fallback={<LoadingScreen label={label} />}>
@@ -34,7 +37,11 @@ export default function App() {
         <Route element={<GuestRoute />}>
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/forgot-password" element={lazyRoute(ForgotPassword, 'One moment…')} />
         </Route>
+        {/* Links from emails: they work whether or not you're logged in */}
+        <Route path="/reset-password" element={lazyRoute(ResetPassword, 'One moment…')} />
+        <Route path="/verify-email" element={lazyRoute(VerifyEmail, 'One moment…')} />
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />

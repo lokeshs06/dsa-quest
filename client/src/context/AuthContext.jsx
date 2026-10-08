@@ -45,13 +45,21 @@ export function AuthProvider({ children }) {
     async (name, email, password) => handleAuth((await api.post('/auth/register', { name, email, password })).data),
     [handleAuth]
   );
+  // After the server sends a fresh copy of you (e.g. once your email is confirmed)
+  const updateUser = useCallback((u) => {
+    userStore.set(u);
+    setUser(u);
+  }, []);
   const logout = useCallback(() => {
     tokenStore.clear();
     clearApiCaches(); // offline copies belong to the person who just signed out
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, register, logout }), [user, loading, login, register, logout]);
+  const value = useMemo(
+    () => ({ user, loading, login, register, logout, completeAuth: handleAuth, updateUser }),
+    [user, loading, login, register, logout, handleAuth, updateUser]
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

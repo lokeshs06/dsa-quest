@@ -93,7 +93,9 @@ describe('weekly digest email', () => {
     sendMail.mockReset().mockResolvedValue({});
     setMailTransport({ sendMail });
   };
-  const sentTo = () => sendMail.mock.calls.map(([mail]) => mail.to);
+  // Only the digests: signing up with email on also sends a confirm-your-email message
+  const digests = () => sendMail.mock.calls.map(([mail]) => mail).filter((mail) => mail.headers?.['List-Unsubscribe']);
+  const sentTo = () => digests().map((mail) => mail.to);
 
   test('a test digest says plainly that email is not set up', async () => {
     const user = await registerUser(app);
@@ -109,7 +111,7 @@ describe('weekly digest email', () => {
     const res = await request(app).post('/api/settings/digest/test').set(user.headers()).expect(200);
     expect(res.body).toEqual({ sent: true, to: user.email });
 
-    const [mail] = sendMail.mock.calls[0];
+    const [mail] = digests();
     expect(mail.to).toBe(user.email);
     expect(mail.subject).toMatch(/Your DSA Quest week: 1 solved, 1-day streak/);
     expect(mail.text).toContain('Solved this week: 1');
@@ -122,7 +124,7 @@ describe('weekly digest email', () => {
     enableEmail();
     const user = await registerUser(app, '<img src=x onerror=alert(1)>');
     await request(app).post('/api/settings/digest/test').set(user.headers()).expect(200);
-    const { html } = sendMail.mock.calls[0][0];
+    const { html } = digests()[0];
     expect(html).not.toContain('<img src=x');
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
@@ -136,7 +138,7 @@ describe('weekly digest email', () => {
   });
 
   describe('unsubscribe link', () => {
-    const tokenFromEmail = () => sendMail.mock.calls.at(-1)[0].headers['List-Unsubscribe'].match(/token=([^>]+)>/)[1];
+    const tokenFromEmail = () => digests().at(-1).headers['List-Unsubscribe'].match(/token=([^>]+)>/)[1];
 
     test('switches digests off with one click, no login needed', async () => {
       enableEmail();
@@ -198,7 +200,7 @@ describe('weekly digest email', () => {
       enableEmail();
       expect(await runDigests(FRIDAY)).toEqual({ sent: 1, failed: 0 });
       expect(sentTo()).toEqual([fan.email]);
-      expect(sendMail.mock.calls[0][0].text).toContain('Solved this week: 2'); // the September solve is outside the week
+      expect(digests()[0].text).toContain('Solved this week: 2'); // the September solve is outside the week
     });
 
     test('never sends the same person two digests in a day', async () => {

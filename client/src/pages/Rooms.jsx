@@ -4,6 +4,8 @@ import { ArrowRight, Globe, LoaderCircle, LogIn, MessageCircle, Plus, RefreshCw,
 import toast from 'react-hot-toast';
 import { api, errorMessage } from '../lib/api.js';
 import { SEAT, SEAT_REFUSAL } from '../lib/battleState.js';
+import { problemChoice } from '../lib/problemChoice.js';
+import { ProblemPicker } from '../components/room/ProblemPicker.jsx';
 import { ErrorState, LoadingScreen } from '../components/Feedback.jsx';
 
 // The room list. Opening a room goes to /room/:code, which is the one place a room is shown.
@@ -135,14 +137,14 @@ function CreateChatRoom({ busy, act, onCreated }) {
 
 function CreateBattleRoom({ busy, act, onCreated }) {
   const [isPublic, setIsPublic] = useState(true);
+  const [problem, setProblem] = useState('random');
   return (
     <form
       className="panel space-y-3 p-4"
       onSubmit={(e) => {
         e.preventDefault();
         act('battle', async () => {
-          const problemOrder = 1 + Math.floor(Math.random() * 25);
-          const { data } = await api.post('/battles', { problemOrder, isPublic });
+          const { data } = await api.post('/battles', { ...problemChoice(problem), isPublic });
           onCreated(data.room);
         });
       }}
@@ -150,7 +152,8 @@ function CreateBattleRoom({ busy, act, onCreated }) {
       <h2 className="flex items-center gap-2 text-sm font-semibold text-muted">
         <Swords className="size-4 text-progress" /> New 1v1 battle room
       </h2>
-      <p className="text-xs text-faint">Two seats. You take the first; the room waits for an opponent. A random starter problem is picked.</p>
+      <p className="text-xs text-faint">Two seats. You take the first; the room waits for an opponent.</p>
+      <ProblemPicker value={problem} onChange={setProblem} disabled={Boolean(busy)} />
       <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
         <input type="checkbox" className="size-4 accent-[var(--color-violet)]" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
         <Globe className="size-3.5" aria-hidden /> List it publicly

@@ -5,6 +5,9 @@ import { validate } from '../middleware/validate.js';
 import {
   registerSchema,
   loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
   problemCreateSchema,
   problemUpdateSchema,
   problemQuerySchema,
@@ -20,6 +23,8 @@ import {
   submitSchema,
   testCasesSchema,
   battleCreateSchema,
+  battleProblemSchema,
+  challengeSendSchema,
   battleSettingsSchema,
   battleCodeSchema,
   solutionCreateSchema,
@@ -33,7 +38,7 @@ import {
   packUpdateSchema,
   marketplaceQuerySchema,
 } from '../validators/schemas.js';
-import { register, login, me } from '../controllers/auth.controller.js';
+import { register, login, me, verifyEmail, resendVerification, forgotPassword, resetPassword } from '../controllers/auth.controller.js';
 import {
   listProblems,
   getProblem,
@@ -55,6 +60,7 @@ import { getLeaderboard } from '../controllers/leaderboard.controller.js';
 import { executeCode, submitSolution } from '../controllers/code.controller.js';
 import { listSolutions, createSolution, updateSolution, deleteSolution, listSubmissions, getSubmission, deleteSubmission } from '../controllers/solution.controller.js';
 import { syncLeetCode } from '../controllers/sync.controller.js';
+import { battleProblemList } from '../services/battle.service.js';
 import { getFeatures, getSettings, updateSettings, sendTestDigest, unsubscribe } from '../controllers/settings.controller.js';
 import { createRoom, listRooms, myRooms, joinRoom, getRoom, memberMap, leaveRoom, deleteRoom } from '../controllers/room.controller.js';
 import {
@@ -107,6 +113,8 @@ const limiter = (limit, windowMs, message, keyGenerator) =>
 
 // Slow down password guessing: 20 auth attempts per 15 minutes per IP
 const authLimiter = limiter(20, 15 * 60 * 1000, 'Too many attempts. Please try again in a few minutes.');
+// Reset emails go to someone's inbox, so a stranger can't use this to flood it
+const resetMailLimiter = limiter(5, 15 * 60 * 1000, 'Too many reset requests. Please wait a few minutes and check your inbox.');
 
 // Everything below calls a paid or third-party service, so each is capped per signed-in user
 const perUser = (req) => req.userId;
@@ -115,6 +123,7 @@ const runLimiter = limiter(30, 60 * 1000, 'Slow down: too many code runs. Wait a
 const syncLimiter = limiter(6, HOUR, 'LeetCode sync is limited to a few times an hour. Try again later.', perUser);
 const publishLimiter = limiter(10, HOUR, 'You’re publishing packs too quickly. Try again later.', perUser);
 const emailLimiter = limiter(5, HOUR, 'Test emails are limited to a few per hour.', perUser);
+const verifyMailLimiter = limiter(5, HOUR, 'You asked for several links already. Check your inbox and spam folder, or try again later.', perUser);
 
 router.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
@@ -126,6 +135,10 @@ router.post('/unsubscribe', unsubscribe);
 router.post('/auth/register', authLimiter, validate(registerSchema), register);
 router.post('/auth/login', authLimiter, validate(loginSchema), login);
 router.get('/auth/me', requireAuth, me);
+router.post('/auth/forgot-password', resetMailLimiter, validate(forgotPasswordSchema), forgotPassword);
+router.post('/auth/reset-password', authLimiter, validate(resetPasswordSchema), resetPassword);
+router.post('/auth/verify-email', authLimiter, validate(verifyEmailSchema), verifyEmail);
+router.post('/auth/verify-email/resend', requireAuth, verifyMailLimiter, resendVerification);
 
 // Which optional integrations (AI, code runner, email) this server has configured
 router.get('/features', requireAuth, getFeatures);
@@ -206,9 +219,9 @@ router.get('/rooms/:id/members/:userId/map', requireAuth, memberMap);
 router.post('/rooms/:id/leave', requireAuth, leaveRoom);
 router.delete('/rooms/:id', requireAuth, deleteRoom);
 router.get('/rooms/by-code/:code', requireAuth, getRoomByCode);
-router.post('/rooms/:code/challenge', requireAuth, sendChallenge);
-router.post('/rooms/:code/challenge/demo', requireAuth, startDemoChallenge);
-router.post('/rooms/:code/challenge/solo', requireAuth, startSoloBattle);
+router.post('/rooms/:code/challenge', requireAuth, validate(challengeSendSchema), sendChallenge);
+router.post('/rooms/:code/challenge/demo', requireAuth, validate(battleProblemSchema), startDemoChallenge);
+router.post('/rooms/:code/challenge/solo', requireAuth, validate(battleProblemSchema), startSoloBattle);
 router.post('/rooms/:code/challenge/accept', requireAuth, acceptChallenge);
 router.post('/rooms/:code/challenge/decline', requireAuth, declineChallenge);
 router.post('/rooms/:code/challenge/cancel', requireAuth, cancelChallenge);
@@ -216,6 +229,7 @@ router.get('/rooms/:code/challenge', requireAuth, getActiveChallenge);
 
 // Challenge Battles (1v1 coding arena)
 router.post('/battles', requireAuth, validate(battleCreateSchema), createBattle);
+router.get('/battles/problems', requireAuth, (_req, res) => res.json({ problems: battleProblemList() }));
 router.get('/battles/:code', requireAuth, getBattle);
 router.get('/battles/:code/result', requireAuth, getBattleResult);
 router.post('/battles/:code/join', requireAuth, joinBattle);

@@ -87,12 +87,13 @@ async function open(user, { roomCode, roomId } = {}) {
 }
 
 const api = {
-  createBattle: (user, body = {}) => request(app).post('/api/battles').set(auth(user)).send(body),
+  // Problem 1 unless a test says otherwise, so GOOD solves it
+  createBattle: (user, body = {}) => request(app).post('/api/battles').set(auth(user)).send({ problemOrder: 1, ...body }),
   join: (user, code) => request(app).post(`/api/battles/${code}/join`).set(auth(user)).send({}),
   byCode: (user, code) => request(app).get(`/api/rooms/by-code/${code}`).set(auth(user)),
   createRoom: (user, name) => request(app).post('/api/rooms').set(auth(user)).send({ name, isPublic: true }),
   joinRoom: (user, code) => request(app).post('/api/rooms/join').set(auth(user)).send({ code }),
-  challenge: (user, code, target) => request(app).post(`/api/rooms/${code}/challenge`).set(auth(user)).send({ targetUserId: target.id }),
+  challenge: (user, code, target, choice = { problemOrder: 1 }) => request(app).post(`/api/rooms/${code}/challenge`).set(auth(user)).send({ targetUserId: target.id, ...choice }),
   accept: (user, code, challengeId) => request(app).post(`/api/rooms/${code}/challenge/accept`).set(auth(user)).send({ challengeId }),
 };
 
@@ -420,6 +421,60 @@ describe('creating a battle from any problem page', () => {
     const res = await api.createBattle(U.Ana, { problemOrder: 99, problemTitle: 'My own problem' }).expect(201);
     expect(res.body.battle.problem.title).toBe('Largest Element');
     await request(app).post(`/api/battles/${res.body.room.code}/leave`).set(auth(U.Ana)).expect(200);
+  });
+});
+
+describe('choosing the problem', () => {
+  let room;
+  const P = {};
+  beforeAll(async () => {
+    for (const name of ['Gil', 'Hal']) P[name] = await registerUser(app, name);
+    room = (await api.createRoom(P.Gil, 'Problem pickers')).body.room;
+    await api.joinRoom(P.Hal, room.code).expect(200);
+  });
+  const leave = (user) => request(app).post(`/api/battles/${room.code}/leave`).set(auth(user));
+
+  test('the picker lists every starter problem', async () => {
+    const { problems } = (await request(app).get('/api/battles/problems').set(auth(P.Gil)).expect(200)).body;
+    expect(problems).toHaveLength(25);
+    expect(problems[0]).toEqual({ order: 1, title: 'Largest Element', difficulty: 'Easy', pattern: expect.any(String) });
+  });
+
+  test('a challenge carries the chosen problem, and accepting it plays that problem', async () => {
+    const sent = (await api.challenge(P.Gil, room.code, P.Hal, { problemOrder: 7 }).expect(201)).body.challenge;
+    expect(sent.problem.order).toBe(7);
+    expect(sent.problem.title).toBeTruthy();
+    const accepted = (await api.accept(P.Hal, room.code, sent.challengeId).expect(200)).body;
+    expect(accepted.battle.problem).toMatchObject({ order: 7, title: sent.problem.title });
+    expect(accepted.judgeInfo.functionName).toBeTruthy();
+    await leave(P.Gil).expect(200);
+  });
+
+  test('a challenge with only a difficulty gets a random problem of that difficulty', async () => {
+    const sent = (await api.challenge(P.Gil, room.code, P.Hal, { difficulty: 'Medium' }).expect(201)).body.challenge;
+    expect(sent.problem.difficulty).toBe('Medium');
+    await request(app).post(`/api/rooms/${room.code}/challenge/cancel`).set(auth(P.Gil)).send({ challengeId: sent.challengeId }).expect(200);
+  });
+
+  test('with no choice the problem is random', async () => {
+    const seen = new Set();
+    for (let i = 0; i < 12; i += 1) {
+      const sent = (await api.challenge(P.Gil, room.code, P.Hal, {}).expect(201)).body.challenge;
+      seen.add(sent.problem.order);
+      await request(app).post(`/api/rooms/${room.code}/challenge/cancel`).set(auth(P.Gil)).send({ challengeId: sent.challengeId }).expect(200);
+    }
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  test('practice uses the chosen problem too, and bad choices are refused', async () => {
+    const solo = (await request(app).post(`/api/rooms/${room.code}/challenge/solo`).set(auth(P.Gil)).send({ problemOrder: 3 }).expect(200)).body;
+    expect(solo.battle.problem.order).toBe(3);
+    await leave(P.Gil).expect(200);
+    const demo = (await request(app).post(`/api/rooms/${room.code}/challenge/demo`).set(auth(P.Hal)).send({ difficulty: 'Medium' }).expect(200)).body;
+    expect(demo.battle.problem.difficulty).toBe('Medium');
+    await leave(P.Hal).expect(200);
+    await request(app).post(`/api/rooms/${room.code}/challenge/solo`).set(auth(P.Gil)).send({ difficulty: 'Impossible' }).expect(400);
+    await request(app).post(`/api/battles`).set(auth(P.Gil)).send({ problemOrder: 'abc' }).expect(400);
   });
 });
 

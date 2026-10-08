@@ -10,7 +10,7 @@ Built with the **MERN stack**: MongoDB, Express, React and Node.js.
 
 ### The core quest
 
-- **Email + password auth.** Passwords are hashed with bcrypt, sessions use JWT, and every API route is protected.
+- **Email + password auth.** Passwords are hashed with bcrypt, sessions use JWT, and every API route is protected. Forgot your password? A one-time reset link comes by email, and new accounts get a confirm-your-email link.
 - **Full CRUD on problems.** Add, view, edit and delete problems, or change a status straight from the quest map.
 - **25 starter problems.** Every new account starts with a 25-problem Array quest, each with a verified link to LeetCode, GeeksforGeeks or Code360.
 - **Four ways to add the problems that matter to you:**
@@ -123,7 +123,7 @@ Everything above works with just MongoDB. These features switch on when you add 
 |---|---|---|
 | The Oracle (AI hints) | `ANTHROPIC_API_KEY` | Uses Claude Opus 5.5. By my estimate a hint costs a cent or two, and each person is limited to 30 per hour. To use a cheaper model, change the `MODEL` constant in `server/src/services/ai.service.js`. |
 | Run code in the editor | `JUDGE0_API_KEY` (Judge0 on RapidAPI) or `JUDGE0_URL` (your own Judge0 server) | Runs happen in Judge0's sandbox, never on your server. |
-| Weekly digest emails | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and `SMTP_FROM`) | Any SMTP provider. Set `EMAIL_TRANSPORT=json` while developing to print emails to the server log instead. |
+| Password reset, email confirmation, weekly digests | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and `SMTP_FROM`) | Any SMTP provider. Set `EMAIL_TRANSPORT=json` while developing to print emails to the server log instead. |
 
 The code editor loads Monaco from the jsDelivr CDN the first time you open it. On a slow or offline connection the page offers a simple built-in editor instead.
 
@@ -179,6 +179,10 @@ All routes are under `/api`. Every route except register, login, health and unsu
 |---|---|---|
 | POST | `/auth/register` | Create an account (`name`, `email`, `password`) and seed the 25 starter problems |
 | POST | `/auth/login` | Log in (`email`, `password`) and get a JWT |
+| POST | `/auth/forgot-password` | Email a reset link (`email`); the reply is the same whether or not the account exists |
+| POST | `/auth/reset-password` | Set a new password from a reset link (`token`, `password`); signs out every other session |
+| POST | `/auth/verify-email` | Confirm your email from the link (`token`) |
+| POST | `/auth/verify-email/resend` | Send a new confirmation link |
 | GET | `/auth/me` | Current user |
 | GET | `/problems` | List your problems. Optional filters: `status`, `difficulty`, `pattern`, `topic`, `important=true`, `search` |
 | POST | `/problems` | Add a problem. Returns 409 if that link is already on your map |
@@ -254,7 +258,7 @@ The app is one Node process: Express serves the API, the Socket.IO rooms and the
 | `CLIENT_URL` | yes | your public URL(s), comma-separated, e.g. `https://dsa-quest.onrender.com` |
 | `JUDGE0_API_KEY` or `JUDGE0_URL` | for Run/Submit | see `server/.env.example` |
 | `ANTHROPIC_API_KEY` | no | AI hints, quizzes, automatic test cases |
-| `SMTP_*`, `API_PUBLIC_URL` | no | weekly digest emails |
+| `SMTP_*`, `API_PUBLIC_URL` | no | password reset, email confirmation and weekly digest emails |
 | `PORT` | no | set by the host automatically |
 
 Don't set `NODE_ENV` yourself: `npm start` sets it, and a global `NODE_ENV=production` during the build would skip the client's build tools. The server refuses to start in production with a weak `JWT_SECRET` or without `MONGO_URI`, and the unsandboxed local code runner is off there (use Judge0).
@@ -287,6 +291,7 @@ Run **one** instance: online presence and battle timers live in the process (bat
 - **Spaced repetition is scheduled lazily.** Instead of a migration, a solved problem with no schedule is simply due the day after you solved it. That also covers bulk imports, packs and LeetCode sync with no extra code, because nothing has to remember to set a date.
 - **Sharing is built on "what leaves your account", not on trust.** Marketplace packs and room-mate maps are assembled from a fixed list of study-material fields, so notes, saved code, dates and attempts can't leak by accident, and tests assert it.
 - **Realtime authorization is checked at the socket, not just the page.** A socket must carry a valid login for an account that still exists, can only join rooms it is a member of, and its chat and "pick a problem" events are ignored unless it is actually in that room. Chat is rate-limited per connection.
+- **Reset and confirmation links are one-time and short-lived** (30 minutes and 24 hours). Only a SHA-256 hash of each is stored, and changing your password signs out every existing session.
 - **Secrets are separated by purpose.** The one-click unsubscribe link is signed with a different key from login tokens, so a link that leaks from an email can switch off digests but can never be used to log in.
 - **Only http(s) links are ever stored,** because a pack from one user ends up in another user's browser. User-provided text in emails is HTML-escaped, and Markdown notes never render raw HTML.
 - **Offline support is careful about whose data it is.** The service worker caches your problems and stats network-first (so you never see stale data while online), and those caches are wiped on logout. Only a 401 signs you out; being offline or a server error never does.

@@ -18,6 +18,14 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+const linkToken = z.string().trim().regex(/^[a-f0-9]{64}$/, 'This link is not valid. Ask for a new one.');
+export const forgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email('Enter a valid email') });
+export const resetPasswordSchema = z.object({
+  token: linkToken,
+  password: z.string().min(8, 'Password must be at least 8 characters').max(128),
+});
+export const verifyEmailSchema = z.object({ token: linkToken });
+
 const text = (max) => z.string().trim().max(max);
 
 export const problemCreateSchema = z.object({
@@ -122,9 +130,16 @@ const battleSettings = z.object({
   soundEffects: z.boolean().optional(),
   fullscreen: z.boolean().optional(),
 });
-export const battleCreateSchema = z.object({
-  // A starter problem number; anything else (your own problems) falls back to the first starter problem
+// Which problem a new battle uses: a starter problem number, or a random one of a difficulty, or (neither) any random one
+const problemChoice = {
+  // Anything that isn't a starter problem (your own problems) falls back to the first starter problem
   problemOrder: z.coerce.number().int().optional(),
+  difficulty: z.enum(DIFFICULTIES, { message: 'Difficulty must be Easy, Medium or Hard' }).optional(),
+};
+export const battleProblemSchema = z.object(problemChoice);
+export const challengeSendSchema = z.object({ targetUserId: z.string().optional(), ...problemChoice });
+export const battleCreateSchema = z.object({
+  ...problemChoice,
   isPublic: z.boolean().optional().default(false),
   settings: battleSettings.optional(),
 });

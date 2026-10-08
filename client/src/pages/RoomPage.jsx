@@ -14,6 +14,7 @@ import { SEAT, SEAT_REFUSAL } from '../lib/battleState.js';
 import { ChatPanel } from '../components/room/ChatPanel.jsx';
 import { MemberList, RoomNav, VoiceControls } from '../components/room/RoomSidebar.jsx';
 import { roomViews } from '../lib/roomViews.js';
+import { problemChoice } from '../lib/problemChoice.js';
 import { BattlesView, ChallengeBanners, LobbyBar } from '../components/room/BattlesView.jsx';
 import { RoomHeader } from '../components/room/RoomHeader.jsx';
 import { QuizActivity } from '../components/room/QuizActivity.jsx';
@@ -606,9 +607,10 @@ function Room({ code }) {
     return new Promise((resolve) => socket.timeout(ms).emit(event, payload, (err, res) => resolve(err ? { ok: false, error: 'The server didn’t answer. Please try again.' } : res)));
   };
 
-  const sendChallenge = (targetUserId) =>
+  // No problem chosen (e.g. the quick Challenge button on a member): the server picks one at random
+  const sendChallenge = (targetUserId, problem) =>
     run(`challenge:${targetUserId}`, async () => {
-      const { data } = await api.post(`/rooms/${code}/challenge`, { targetUserId });
+      const { data } = await api.post(`/rooms/${code}/challenge`, { targetUserId, ...problemChoice(problem) });
       setChallenges((list) => [data.challenge, ...list.filter((c) => c.challengeId !== data.challenge.challengeId)]);
       toast.success(`Challenge sent to ${data.challenge.challengedName}.`);
     });
@@ -630,9 +632,9 @@ function Room({ code }) {
       await api.post(`/rooms/${code}/challenge/cancel`, { challengeId });
       setChallenges((list) => list.filter((c) => c.challengeId !== challengeId));
     });
-  const startPractice = (kind) =>
+  const startPractice = (kind, problem) =>
     run(kind, async () => {
-      const { data } = await api.post(`/rooms/${code}/challenge/${kind}`);
+      const { data } = await api.post(`/rooms/${code}/challenge/${kind}`, problemChoice(problem));
       applyMyBattle(data.battle, data.judgeInfo);
     });
 

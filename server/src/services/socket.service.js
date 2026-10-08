@@ -32,9 +32,10 @@ export function setupSocket(io) {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error('Authentication required'));
     try {
-      const { sub } = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(sub).select('name').lean();
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findById(payload.sub).select('name sessionVersion').lean();
       if (!user) return next(new Error('Account not found'));
+      if ((payload.sv ?? 0) !== (user.sessionVersion ?? 0)) return next(new Error('Invalid token'));
       socket.data.userId = user._id.toString();
       socket.data.userName = user.name;
       return next();

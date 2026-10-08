@@ -107,12 +107,60 @@ export function buildDigest(user, stats) {
   };
 }
 
+const fromAddress = () => `"DSA Quest" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@dsaquest.local'}>`;
+
+// A page of the client app, e.g. appLink('/reset-password', { token })
+export const appLink = (path, params = {}) => `${clientUrl()}${path}${Object.keys(params).length ? `?${new URLSearchParams(params)}` : ''}`;
+
+// ---- account emails: confirm your address, reset your password
+
+export function buildAccountEmail({ name, heading, intro, button, url, outro }) {
+  const html = `<!doctype html>
+<html><body style="margin:0;background:#f3f4fa;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#151a33">
+  <div style="max-width:520px;margin:0 auto;padding:24px 16px">
+    <div style="background:#ffffff;border:1px solid #d9deef;border-radius:16px;padding:28px">
+      <h1 style="margin:0 0 12px;font-size:22px">${escapeHtml(heading)}</h1>
+      <p style="margin:0 0 20px;color:#555e82;line-height:1.5">Hi ${escapeHtml(name)}, ${escapeHtml(intro)}</p>
+      <p style="margin:0"><a href="${escapeHtml(url)}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:12px">${escapeHtml(button)}</a></p>
+      <p style="margin:24px 0 0;color:#555e82;font-size:13px;line-height:1.5">${escapeHtml(outro)}</p>
+      <p style="margin:12px 0 0;color:#8f97b6;font-size:12px;word-break:break-all">If the button doesn't work, open this link: ${escapeHtml(url)}</p>
+    </div>
+  </div>
+</body></html>`;
+  const text = [`Hi ${name}, ${intro}`, '', `${button}: ${url}`, '', outro].join('\n');
+  return { html, text };
+}
+
+async function sendAccountEmail(user, subject, content) {
+  const mailer = getTransport();
+  if (!mailer) throw new Error('Email is not configured');
+  return mailer.sendMail({ from: fromAddress(), to: user.email, subject, ...buildAccountEmail({ name: user.name, ...content }) });
+}
+
+export const sendVerificationEmail = (user, token) =>
+  sendAccountEmail(user, 'Confirm your DSA Quest email', {
+    heading: 'Confirm your email',
+    intro: 'please confirm that this is your email address. It lets you reset your password if you ever forget it.',
+    button: 'Confirm email',
+    url: appLink('/verify-email', { token }),
+    outro: 'This link works for 24 hours. If you didn’t create a DSA Quest account, you can ignore this email.',
+  });
+
+export const sendPasswordResetEmail = (user, token) =>
+  sendAccountEmail(user, 'Reset your DSA Quest password', {
+    heading: 'Reset your password',
+    intro: 'we got a request to reset the password for your DSA Quest account.',
+    button: 'Choose a new password',
+    url: appLink('/reset-password', { token }),
+    outro: 'This link works once, for 30 minutes. If you didn’t ask for it, ignore this email: your password stays the same.',
+  });
+
 export async function sendDigest(user, stats) {
   const mailer = getTransport();
   if (!mailer) throw new Error('Email is not configured');
   const { subject, html, text, unsubscribeUrl } = buildDigest(user, stats);
   return mailer.sendMail({
-    from: `"DSA Quest" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@dsaquest.local'}>`,
+    from: fromAddress(),
     to: user.email,
     subject,
     html,

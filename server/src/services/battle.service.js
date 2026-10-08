@@ -90,6 +90,19 @@ export function saveCodeSoon(battleId, userId, update) {
 
 // ---------------------------------------------------------------- problems and players
 export const problemData = (order) => arrayProblems.find((p) => p.order === Number(order)) || arrayProblems[0];
+
+// The problem for a new battle: the one asked for, else a random one (of the asked-for difficulty),
+// avoiding `exclude` (e.g. the problem just played) when there's anything else to pick
+export function pickProblem({ problemOrder, difficulty, exclude } = {}) {
+  if (problemOrder != null) return problemData(problemOrder);
+  const pool = arrayProblems.filter((p) => !difficulty || p.difficulty === difficulty);
+  const fresh = pool.filter((p) => p.order !== Number(exclude));
+  const from = fresh.length ? fresh : pool.length ? pool : arrayProblems;
+  return from[Math.floor(Math.random() * from.length)];
+}
+
+// What the problem pickers offer
+export const battleProblemList = () => arrayProblems.map(({ order, title, difficulty, pattern }) => ({ order, title, difficulty, pattern }));
 export const problemInfo = (battle) => judgeInfo(problemData(battle?.problem?.order));
 export const problemFields = (p) => ({ order: p.order, title: p.title, difficulty: p.difficulty, pattern: p.pattern, link: p.link });
 
@@ -564,9 +577,9 @@ export const defaultSettings = (overrides = {}) => ({
 });
 
 // "Challenge a friend": a two-seat battle room with the creator in the first seat
-export async function createBattleRoom(user, { problemOrder, isPublic = false, settings } = {}) {
+export async function createBattleRoom(user, { problemOrder, difficulty, isPublic = false, settings } = {}) {
   await ensureNotBattling([user._id]);
-  const problem = problemData(problemOrder);
+  const problem = pickProblem({ problemOrder, difficulty });
   const info = judgeInfo(problem);
   const code = await uniqueCode();
   const room = await Room.create({ name: `${problem.title} battle`, code, kind: 'battle', host: user._id, members: [user._id], isPublic: Boolean(isPublic), maxMembers: 2 });
@@ -642,8 +655,7 @@ export async function requestRematch(userId, roomCode) {
   const nextId = new mongoose.Types.ObjectId();
   const claimed = await Battle.findOneAndUpdate({ _id: last._id, rematchId: null }, { $set: { rematchId: nextId } });
   if (!claimed) return { waiting: false };
-  const others = arrayProblems.filter((p) => p.order !== last.problem?.order);
-  const problem = others[Math.floor(Math.random() * others.length)] ?? problemData(1);
+  const problem = pickProblem({ exclude: last.problem?.order });
   const info = judgeInfo(problem);
   const settings = typeof last.settings?.toObject === 'function' ? last.settings.toObject() : last.settings;
   const next = await Battle.create({

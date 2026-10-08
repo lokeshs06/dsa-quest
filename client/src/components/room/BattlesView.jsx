@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Bot, Check, Clock, LoaderCircle, LogOut, Settings as SettingsIcon, Swords, Timer, Trophy, User, Users } from 'lucide-react';
 import { SEAT } from '../../lib/battleState.js';
 import { Avatar } from './ChatPanel.jsx';
+import { ProblemPicker } from './ProblemPicker.jsx';
 
 const LIVE = ['waiting', 'lobby', 'settings', 'countdown', 'active'];
 const PRESTART = ['waiting', 'lobby', 'settings'];
@@ -43,7 +44,14 @@ export function ChallengeBanners({ challenges, me, busy, onAccept, onDecline, on
           <Swords className="size-5 shrink-0 text-violet-soft" aria-hidden />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{c.challengerName} challenged you to a 1v1 battle</p>
-            <p className="text-xs text-muted">Expires in {left(c)}s</p>
+            <p className="text-xs text-muted">
+              {c.problem?.title ? (
+                <>
+                  <span className="text-ink">{c.problem.title}</span> · {c.problem.difficulty} ·{' '}
+                </>
+              ) : null}
+              Expires in {left(c)}s
+            </p>
           </div>
           <div className="flex gap-2">
             <button type="button" className="btn-primary px-4 py-1.5 text-xs" onClick={() => onAccept(c.challengeId)} disabled={Boolean(busy)}>
@@ -59,7 +67,10 @@ export function ChallengeBanners({ challenges, me, busy, onAccept, onDecline, on
         <div key={c.challengeId} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-4 py-2.5">
           <LoaderCircle className="size-4 shrink-0 animate-spin text-muted" aria-hidden />
           <p className="min-w-0 flex-1 text-sm">
-            Waiting for <strong>{c.challengedName}</strong> to accept your challenge <span className="text-xs text-faint">· {left(c)}s</span>
+            Waiting for <strong>{c.challengedName}</strong> to accept your challenge
+            <span className="text-xs text-faint">
+              {c.problem?.title ? ` · ${c.problem.title}` : ''} · {left(c)}s
+            </span>
           </p>
           <button type="button" className="btn-ghost px-3 py-1 text-xs" onClick={() => onCancel(c.challengeId)} disabled={Boolean(busy)}>
             Cancel
@@ -151,6 +162,7 @@ function BattleLobby({ battle, me, battleRoom, busy, connected, onToggleReady, o
 
 export function BattlesView({ battleRoom, members, me, battles, myBattle, seat, challenges, busy, connected, result, onChallenge, onPractice, onToggleReady, onOpenSettings, onLeaveBattle, onShowResult }) {
   const [target, setTarget] = useState('');
+  const [problem, setProblem] = useState('random');
   const inLive = Boolean(myBattle && LIVE.includes(myBattle.status));
   const lobby = inLive && PRESTART.includes(myBattle.status) ? myBattle : null;
   const pendingWith = (id) => challenges.some((c) => [c.challengerId, c.challengedId].includes(id));
@@ -176,15 +188,16 @@ export function BattlesView({ battleRoom, members, me, battles, myBattle, seat, 
             <p className="text-sm text-muted">You are already in a battle. Finish or leave it to start another.</p>
           ) : (
             <div className="space-y-4">
+              <ProblemPicker value={problem} onChange={setProblem} disabled={Boolean(busy)} />
               <form
-                className="flex flex-wrap gap-2"
+                className="flex flex-wrap items-end gap-2"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (target) onChallenge(target);
+                  if (target) onChallenge(target, problem);
                 }}
               >
                 <label className="min-w-48 flex-1">
-                  <span className="sr-only">Member to challenge</span>
+                  <span className="label">Opponent</span>
                   <select className="field" value={target} onChange={(e) => setTarget(e.target.value)} disabled={!eligible.length}>
                     <option value="">{eligible.length ? 'Choose a member to challenge' : 'Nobody is free right now'}</option>
                     {eligible.map((m) => (
@@ -199,14 +212,14 @@ export function BattlesView({ battleRoom, members, me, battles, myBattle, seat, 
                 </button>
               </form>
               <div className="grid gap-2 sm:grid-cols-2">
-                <button type="button" onClick={() => onPractice('demo')} disabled={Boolean(busy)} className="flex items-center gap-3 rounded-xl border border-line p-3 text-left transition hover:border-violet/40 hover:bg-panel-2/40 disabled:opacity-50">
+                <button type="button" onClick={() => onPractice('demo', problem)} disabled={Boolean(busy)} className="flex items-center gap-3 rounded-xl border border-line p-3 text-left transition hover:border-violet/40 hover:bg-panel-2/40 disabled:opacity-50">
                   {busy === 'demo' ? <LoaderCircle className="size-5 animate-spin text-muted" /> : <Bot className="size-5 text-muted" />}
                   <span>
                     <span className="block text-sm font-semibold">Practice vs bot</span>
                     <span className="block text-xs text-muted">A scripted opponent, to try the arena</span>
                   </span>
                 </button>
-                <button type="button" onClick={() => onPractice('solo')} disabled={Boolean(busy)} className="flex items-center gap-3 rounded-xl border border-line p-3 text-left transition hover:border-violet/40 hover:bg-panel-2/40 disabled:opacity-50">
+                <button type="button" onClick={() => onPractice('solo', problem)} disabled={Boolean(busy)} className="flex items-center gap-3 rounded-xl border border-line p-3 text-left transition hover:border-violet/40 hover:bg-panel-2/40 disabled:opacity-50">
                   {busy === 'solo' ? <LoaderCircle className="size-5 animate-spin text-muted" /> : <Clock className="size-5 text-muted" />}
                   <span>
                     <span className="block text-sm font-semibold">Solo practice</span>

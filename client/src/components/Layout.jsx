@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Brain, ChartColumn, Ellipsis, LayoutDashboard, LogOut, Map, Package, Settings, Tent, Trophy, WifiOff, Zap } from 'lucide-react';
-import { api } from '../lib/api.js';
+import { Brain, ChartColumn, Ellipsis, LayoutDashboard, LogOut, Mail, Map, Package, Settings, Tent, Trophy, WifiOff, X, Zap } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { api, errorMessage } from '../lib/api.js';
+import { useFeatures } from '../lib/features.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { RouteErrorBoundary } from './Feedback.jsx';
 import { ThemeToggle } from './ThemeToggle.jsx';
@@ -119,6 +121,56 @@ function MoreMenu({ items, due }) {
   );
 }
 
+// Shown until your email is confirmed (only when the server can send email). Hiding it lasts until the tab closes.
+const HIDE_KEY = 'dsa-quest:verify-banner-hidden';
+function VerifyEmailBanner({ user }) {
+  const features = useFeatures();
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return sessionStorage.getItem(HIDE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [busy, setBusy] = useState(false);
+  if (hidden || user?.emailVerified !== false || !features?.email) return null;
+
+  const resend = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post('/auth/verify-email/resend');
+      toast.success(data.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const hide = () => {
+    setHidden(true);
+    try {
+      sessionStorage.setItem(HIDE_KEY, '1');
+    } catch {
+      /* hidden for this page view only */
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-2 bg-violet/15 px-4 py-1.5 text-center text-xs text-ink" role="status">
+      <Mail className="size-3.5 shrink-0 text-violet-soft" aria-hidden />
+      <span>
+        Confirm your email <span className="font-semibold">{user.email}</span> so you can reset your password if you forget it.
+      </span>
+      <button type="button" onClick={resend} disabled={busy} className="font-semibold text-violet-soft hover:underline disabled:opacity-60">
+        {busy ? 'Sending…' : 'Resend email'}
+      </button>
+      <button type="button" onClick={hide} className="rounded p-0.5 text-muted hover:text-ink" aria-label="Hide this reminder">
+        <X className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export function Layout() {
   const { user, logout } = useAuth();
   const due = useReviewsDue();
@@ -132,6 +184,7 @@ export function Layout() {
           <WifiOff className="size-3.5 shrink-0" aria-hidden /> You’re offline. Showing what’s saved on this device; changes to your problems sync when you reconnect.
         </p>
       )}
+      <VerifyEmailBanner user={user} />
       <header className="sticky top-0 z-20 border-b border-line/70 bg-abyss/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
           <NavLink to="/" className="flex shrink-0 items-center gap-2 font-display text-lg font-bold" aria-label="DSA Quest home">
