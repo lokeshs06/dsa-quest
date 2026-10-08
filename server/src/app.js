@@ -29,11 +29,15 @@ export function createApp() {
   app.use('/api', routes);
   app.use('/api', notFound);
 
-  // In production, serve the built React app from the same server (one deploy, no CORS)
+  // One-service deploy: serve the built React app from here too. SERVE_CLIENT=false (or no build) keeps
+  // this an API only, for when the client is hosted separately (Vercel, Netlify).
   const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../client/dist');
-  if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDist)) {
+  const serveClient = process.env.NODE_ENV === 'production' && process.env.SERVE_CLIENT !== 'false' && fs.existsSync(clientDist);
+  if (serveClient) {
     app.use(express.static(clientDist));
     app.get(/^\/(?!api).*/, (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+  } else {
+    app.get('/', (_req, res) => res.json({ name: 'DSA Quest API', status: 'ok', health: '/api/health' }));
   }
 
   app.use(notFound);

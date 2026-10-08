@@ -67,7 +67,7 @@ JUDGE0_URL=http://localhost:2358
 JUDGE0_URL=http://<YOUR_SERVER_IP_OR_DOMAIN>:2358
 ```
 
-If you configured authentication in `judge0.conf` via `AUTHZ_TOKEN`, add:
+If you configured authentication in `judge0.conf` via `AUTHN_TOKEN` (DSA Quest sends it as the `X-Auth-Token` header), add:
 ```env
 JUDGE0_API_KEY=your_auth_token
 ```

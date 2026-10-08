@@ -1,4 +1,5 @@
-# Render Blueprint: one web service that runs the API and serves the client.
+# Render Blueprint: the API (Express + Socket.IO) only. The client is hosted separately (Vercel), with
+# VITE_API_URL=https://<this-service>.onrender.com/api.
 # Render dashboard -> New -> Blueprint -> pick this repo. Fill in the values marked "sync: false" when asked.
 services:
   - type: web
@@ -6,23 +7,30 @@ services:
     runtime: node
     plan: free # free sleeps after 15 minutes idle (first request then takes ~1 minute); "starter" stays awake
     region: singapore
-    buildCommand: npm run install:all && npm run build
+    rootDir: server
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
         value: "22"
+      - key: SERVE_CLIENT # API only: "/" answers with a small JSON status instead of the website
+        value: "false"
       - key: MONGO_URI # MongoDB Atlas connection string
         sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 7d
-      - key: CLIENT_URL # your public URL, e.g. https://dsa-quest.onrender.com
+      - key: CLIENT_URL # the frontend's URL(s), comma-separated, e.g. https://dsa-quest.vercel.app
+        sync: false
+      - key: API_PUBLIC_URL # this service's own URL, e.g. https://dsa-quest-68vg.onrender.com
         sync: false
       # Optional features: leave empty to switch them off
-      - key: JUDGE0_API_KEY # Run/Submit in the editor and battles (RapidAPI Judge0 CE)
+      - key: JUDGE0_URL # your Judge0 server, e.g. https://52-63-82-70.sslip.io
+        sync: false
+      - key: JUDGE0_API_KEY # its AUTHN_TOKEN (or a RapidAPI key when JUDGE0_URL is empty)
         sync: false
       - key: ANTHROPIC_API_KEY # AI hints, quiz questions, automatic test cases
         sync: false

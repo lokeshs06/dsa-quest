@@ -261,7 +261,7 @@ Don't set `NODE_ENV` yourself: `npm start` sets it, and a global `NODE_ENV=produ
 
 ### Option A: Render (simplest, from `render.yaml`)
 1. Create an Atlas cluster, a database user, and allow access from `0.0.0.0/0` (Render's IPs change).
-2. Render dashboard → **New → Blueprint** → pick this repo. It reads `render.yaml` (build `npm run install:all && npm run build`, start `npm start`, health check `/api/health`, a generated `JWT_SECRET`).
+2. Render dashboard → **New → Web Service** → pick this repo, root directory empty, build `npm run install:all && npm run build`, start `npm start`, health check `/api/health`. (The `render.yaml` blueprint is set up for the API-only split, Option C.)
 3. Fill in `MONGO_URI`, `CLIENT_URL` (the `https://<name>.onrender.com` URL Render shows you) and any optional keys. Deploy.
 
 ### Option B: Docker (Railway, Fly.io, Koyeb, any VPS)
@@ -272,7 +272,7 @@ docker run -p 5000:5000 -e MONGO_URI=... -e JWT_SECRET=... -e CLIENT_URL=https:/
 Railway and Koyeb detect the `Dockerfile` automatically; add the variables above in their dashboard. On Fly.io: `fly launch` (it uses the Dockerfile; set the internal port to 5000), then `fly secrets set MONGO_URI=... JWT_SECRET=... CLIENT_URL=...`.
 
 ### Option C: split hosting
-Client on [Vercel](https://vercel.com) or [Netlify](https://www.netlify.com) (root directory `client`, build `npm run build`, output `dist`; `client/vercel.json` already rewrites routes to the app) with `VITE_API_URL=https://<your-api-host>/api`. API on Render or Railway with `CLIENT_URL=https://<your-vercel-app>.vercel.app` and `API_PUBLIC_URL=https://<your-api-host>`.
+Client on [Vercel](https://vercel.com) or [Netlify](https://www.netlify.com) (root directory `client`, build `npm run build`, output `dist`; `client/vercel.json` already rewrites routes to the app) with `VITE_API_URL=https://<your-api-host>/api`. API on Render (root directory `server`, build `npm install`, start `npm start`; `render.yaml` is set up this way) or Railway, with `CLIENT_URL=https://<your-vercel-app>.vercel.app`, `API_PUBLIC_URL=https://<your-api-host>` and `SERVE_CLIENT=false`, so the API host answers `/` with a small JSON status instead of the website.
 
 ### Scaling and CI
 Run **one** instance: online presence and battle timers live in the process (battles still settle correctly after a restart, the next time they are read). More instances would need Socket.IO's Redis adapter and a shared scheduler.

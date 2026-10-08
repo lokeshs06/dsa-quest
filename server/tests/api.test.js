@@ -30,6 +30,13 @@ const user = { name: 'Test Hero', email: 'hero@example.com', password: 'supersec
 let token;
 const auth = () => ({ Authorization: `Bearer ${token}`, 'X-Client-Date': '2026-10-06' });
 
+describe('the API on its own', () => {
+  test('/ answers with a small JSON status, not the website', async () => {
+    const res = await request(app).get('/').expect(200);
+    expect(res.body).toEqual({ name: 'DSA Quest API', status: 'ok', health: '/api/health' });
+  });
+});
+
 describe('auth', () => {
   test('register seeds the 25 starter problems', async () => {
     const res = await request(app).post('/api/auth/register').send(user).expect(201);
